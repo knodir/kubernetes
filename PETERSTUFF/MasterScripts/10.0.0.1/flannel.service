@@ -1,0 +1,10 @@
+[Unit]
+Description=flannel
+Requires=etcd_custom.service
+After=etcd_custom.service
+
+[Service]
+ExecStart=/opt/bin/flannel -iface=10.0.0.1 -etcd-endpoints=http://10.0.0.1:4001
+ExecStartPost=-/bin/bash -c "until [ -e /run/flannel/subnet.env ]; do echo \"waiting for write.\"; sleep 3; done"
+
+[Install]

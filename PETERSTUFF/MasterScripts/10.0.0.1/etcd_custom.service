@@ -1,0 +1,9 @@
+[Unit]
+Description=etcd daemon
+
+[Service]
+EnvironmentFile=/home/core/STARTUP_SCRIPTS/discovery_token.txt 
+ExecStart=/usr/bin/etcd -addr 10.0.0.1:4001 -peer-addr 10.0.0.1:7001 -discovery=$DISCOVERY_URL -data-dir=~/etcd -name=CoreOS1
+ExecStartPost=-/bin/bash -c "until /usr/bin/etcdctl set/coreos.com/network/config '{\"Network\": \"10.100.0.0/16\"}'; do echo \"waiting for etcd to become available...\"; sleep 5; done"
+
+[Install]

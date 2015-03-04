@@ -1,0 +1,6 @@
+#!/bin/bash
+sudo systemctl stop kubelet.service
+sudo systemctl stop proxy.service
+sudo systemctl stop scheduler.service
+sudo systemctl stop docker_custom.service
+sudo systemctl stop flannel.service

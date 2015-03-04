@@ -1,0 +1,9 @@
+[Unit]
+Description=Kube Scheduler
+After=docker_custom.service
+Wants=docker_custom.service
+
+[Service]
+ExecStart=/opt/bin/kube-scheduler --master=10.0.0.1:8080
+
+[Install]

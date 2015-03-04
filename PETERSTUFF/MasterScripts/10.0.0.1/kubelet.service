@@ -1,0 +1,11 @@
+[Unit]
+Description=Kubernetes Kubelet
+After=etcd_custom.service
+After=docker_custom.service
+Wants=etcd_custom.service
+Wants=docker_custom.service
+
+[Service]
+ExecStart=/opt/bin/kubelet --address=10.0.0.1 --port=10250 --hostname_override=10.0.0.1 --etcd_servers=http://10.0.0.1:4001 --logtostderr=true
+
+[Install]
