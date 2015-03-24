@@ -6,7 +6,7 @@ Wants=etcd_custom.service
 Wants=docker_custom.service
 
 [Service]
-ExecStart=/opt/bin/kube-apiserver --address=10.0.0.1 --port=8080 --etcd_servers=http://10.0.0.1:4001 --portal_net=10.100.0.0/16 --logtostderr=true
+ExecStart=/opt/bin/kube-apiserver --address=198.162.52.35 --port=8080 --etcd_servers=http://10.0.0.1:4001 --portal_net=10.100.0.0/16 --allow_privileged=true --logtostderr=true
 
 [Install]
 

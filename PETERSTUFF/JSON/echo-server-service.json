@@ -1,0 +1,14 @@
+{
+  "id": "echomasterservice",
+  "kind": "Service",
+  "apiVersion": "v1beta1",
+  "publicIPs": ["198.162.52.156", "198.162.52.35"],
+  "port": 3333,
+  "containerPort": 3333,
+  "selector": {
+	"name": "firewallcontroller"
+  },
+  "labels": {
+ 	"name": "firewallcontroller"
+  }
+}

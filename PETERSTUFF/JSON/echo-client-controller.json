@@ -1,0 +1,27 @@
+{
+  "id": "echoclientcontroller",
+  "kind": "ReplicationController",
+  "apiVersion": "v1beta1",
+  "desiredState": {
+	"replicas": 1,
+	"replicaSelector": {"name": "echoclient"},
+	"podTemplate": {
+		"desiredState": {
+			"manifest": {
+				"version": "v1beta1",
+				"id": "echoclient",
+				"containers": [{
+					"name": "echoclient",
+					"image": "quantumlight/echoclient",
+				}]
+			}
+		},
+		"labels": {
+			"name": "echoclient",
+		}
+	}
+  },
+  "labels": {
+	"name": "echoclient"
+  }
+}

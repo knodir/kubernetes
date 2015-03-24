@@ -7,6 +7,8 @@ After=flannel.service
 EnvironmentFile=/run/flannel/subnet.env
 ExecStartPre=-/usr/bin/ip link set dev docker0 down
 ExecStartPre=-/usr/sbin/brctl delbr docker0
+ExecStartPre=-/usr/bin/rm /var/run/docker.pid
+ExecStartPre=-/usr/bin/rm /var/run/docker.sock
 ExecStart=/usr/bin/docker -d --bip=${FLANNEL_SUBNET} --mtu=${FLANNEL_MTU}
 
 [Install]

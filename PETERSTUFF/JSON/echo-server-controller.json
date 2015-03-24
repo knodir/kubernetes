@@ -1,0 +1,28 @@
+{
+  "id": "echoservercontroller",
+  "kind": "ReplicationController",
+  "apiVersion": "v1beta1",
+  "desiredState": {
+	"replicas": 2,
+	"replicaSelector": {"name": "echomaster"},
+	"podTemplate": {
+		"desiredState": {
+			"manifest": {
+				"version": "v1beta1",
+				"id": "echomaster",
+				"containers": [{
+					"name": "echomaster",
+					"image": "quantumlight/echoserver",
+					"ports": [{"containerPort": 3333}]
+				}]
+			}
+		},
+		"labels": {
+			"name": "echomaster",
+		}
+	}
+  },
+  "labels": {
+	"name": "echomaster"
+  }
+}

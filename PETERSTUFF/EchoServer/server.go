@@ -22,6 +22,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	env_var := os.Environ()
+	for i := 1; i < len(env_var); i++ {
+		fmt.Printf("%s\n", env_var[i])
+	}
+
 	//Close listener application when application closes
 	defer l.Close()
 	fmt.Println("Listening on " + CONN_HOST + ":" + CONN_PORT)

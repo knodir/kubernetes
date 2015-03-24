@@ -1,0 +1,13 @@
+{
+  "id": "echofilteredservice",
+  "kind": "Service",
+  "apiVersion": "v1beta1",
+  "port": 3333,
+  "containerPort": 3333,
+  "selector": {
+	"name": "echomaster"
+  },
+  "labels": {
+ 	"name": "echomaster"
+  }
+}
