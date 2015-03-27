@@ -1,0 +1,28 @@
+{
+  "id": "firewallcontroller",
+  "kind": "ReplicationController",
+  "apiVersion": "v1beta1",
+  "desiredState": {
+	"replicas": 2,
+	"replicaSelector": {"name": "firewallcontroller"},
+	"podTemplate": {
+		"desiredState": {
+			"manifest": {
+				"version": "v1beta1",
+				"id": "firewallcontroller",
+				"containers": [{
+					"name": "firewallcontroller",
+					"image": "quantumlight/firewall",
+					"privileged": true, 
+				}]
+			}
+		},
+		"labels": {
+			"name": "firewallcontroller",
+		}
+	}
+  },
+  "labels": {
+	"name": "firewallcontroller"
+  }
+}

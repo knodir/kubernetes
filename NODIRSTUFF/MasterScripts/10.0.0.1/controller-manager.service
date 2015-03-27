@@ -1,0 +1,13 @@
+[Unit]
+Description=controller-manager
+After=etcd_custom.service
+After=docker_custom.service
+After=apiserver.service
+Wants=etcd_custom.service
+Wants=docker_custom.service
+Wants=apiserver.service
+
+[Service]
+ExecStart=/opt/bin/kube-controller-manager --master=http://198.162.52.217:8080 --machines=198.162.52.217,198.162.52.37
+
+[Install]

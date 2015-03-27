@@ -1,0 +1,8 @@
+[Unit]
+Description=flannel
+
+[Service]
+ExecStart=/opt/bin/flannel -iface=198.162.52.37 -etcd-endpoints=http://198.162.52.217:4001
+ExecStartPost=-/bin/bash -c "until [ -e /run/flannel/subnet.env ]; do echo \"waiting for write.\"; sleep 3; done"
+
+[Install]
