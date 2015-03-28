@@ -77,7 +77,7 @@ func getContainerMemInUse(cadvisorClient *client.Client, containerName string) {
 		// returns MemoryStats
 		memoryStats := stats.Memory
 		usedPercentile := memoryStats.WorkingSet / memorySpecs.Limit
-		fmt.Printf("WorkingSet = %d, Usage = %d, Percentage = %d\n", memoryStats.WorkingSet, memoryStats.Usage, usedPercentile*100)
+		fmt.Printf("WorkingSet = %d, Usage = %d, Max = %d, Perc = %d\n", memoryStats.WorkingSet, memoryStats.Usage, memorySpecs.Limit, usedPercentile*100)
 		time.Sleep(READ_FREQ)
 	}
 }
@@ -103,6 +103,26 @@ func getContainerNetInUse(cadvisorClient *client.Client, containerName string) {
 	
 		time.Sleep(READ_FREQ)
 	}
+
+	// NetworkStats are:
+	// type NetworkStats struct {
+	// 	// Cumulative count of bytes received.
+	// 	RxBytes uint64 `json:"rx_bytes"`
+	// 	// Cumulative count of packets received.
+	// 	RxPackets uint64 `json:"rx_packets"`
+	// 	// Cumulative count of receive errors encountered.
+	// 	RxErrors uint64 `json:"rx_errors"`
+	// 	// Cumulative count of packets dropped while receiving.
+	// 	RxDropped uint64 `json:"rx_dropped"`
+	// 	// Cumulative count of bytes transmitted.
+	// 	TxBytes uint64 `json:"tx_bytes"`
+	// 	// Cumulative count of packets transmitted.
+	// 	TxPackets uint64 `json:"tx_packets"`
+	// 	// Cumulative count of transmit errors encountered.
+	// 	TxErrors uint64 `json:"tx_errors"`
+	// 	// Cumulative count of packets dropped while transmitting.
+	// 	TxDropped uint64 `json:"tx_dropped"`
+	// }
 }
 
 
@@ -139,46 +159,43 @@ func getHostMemInUse(cadvisorClient *client.Client) {
 }
 
 func main() {
-	// cadvisorClient, err := client.NewClient("http://localhost:8080/")
-	// checkFail("Could not create NewClient", err, true)	
+	cadvisorClient, err := client.NewClient("http://localhost:9090/")
+	handleError("Could not create NewClient", err, true)	
 
-	// // returns MachineInfo
-	// mInfo, err := cadvisorClient.MachineInfo()
-	// checkFail("Could not get MachineInfo", err, false)
-	// // fmt.Println("\nmachineInfo = ", mInfo)
-	// fmt.Printf("\nMemoryCapacity = %d\n", int64(mInfo.MemoryCapacity))
-	// hostRam = mInfo.MemoryCapacity
+	// returns MachineInfo
+	mInfo, err := cadvisorClient.MachineInfo()
+	handleError("Could not get MachineInfo", err, false)
+	// fmt.Println("\nmachineInfo = ", mInfo)
+	fmt.Printf("\nMemoryCapacity = %d\n", int64(mInfo.MemoryCapacity))
+	hostRam = mInfo.MemoryCapacity
 
 
-	// fmt.Println("\nTopology = ", mInfo.Topology)
-	// fmt.Println("\nFilesystems = ", mInfo.Filesystems)
+	fmt.Println("\nTopology = ", mInfo.Topology)
+	fmt.Println("\nFilesystems = ", mInfo.Filesystems)
 
-	// containerName := "fea8bfdc36b33d032a9dbc5c5d62ee39335d54b877302851a1cee03e1ecf5f81"
+	containerName := "a84bff40213cee6db10354b6e63936e97a8d2221f7289ce4dba06b1a305e0b47"
 
-	// // Max number of stats to return.
-	// numStats := 1
-	// request := info.ContainerInfoRequest{NumStats: numStats}
+	// Max number of stats to return.
+	numStats := 1
+	request := info.ContainerInfoRequest{NumStats: numStats}
 
-	// // returns ContainerInfo struct
-	// fullContName := "/docker/"+containerName
-	// cInfo, err := cadvisorClient.ContainerInfo(fullContName, &request)
-	// checkFail("Could not get container info", err, true)
-	// fmt.Println("\ncInfo =", cInfo)
+	// returns ContainerInfo struct
+	fullContName := "/docker/"+containerName
+	cInfo, err := cadvisorClient.ContainerInfo(fullContName, &request)
+	handleError("Could not get container info", err, true)
+	fmt.Println("\ncInfo =", cInfo)
 
-	// fmt.Println("Name =", cInfo.Name)
-	// fmt.Println("Aliases =", cInfo.Aliases)
-	// // fmt.Println("Namespace = ", cInfo.Namespace)
+	fmt.Println("Name =", cInfo.Name)
+	fmt.Println("Aliases =", cInfo.Aliases)
+	// fmt.Println("Namespace = ", cInfo.Namespace)
 
-	// getContainerMemInUse(cadvisorClient, containerName)
 	// getContainerNetInUse(cadvisorClient, containerName)
+	getContainerMemInUse(cadvisorClient, containerName)
 	// getContainerCpuInUse(cadvisorClient, containerName)
 
-
     // endpoint := "unix:///var/run/docker.sock"
-    endpoint := "http://localhost:8080"
+    // endpoint := "http://localhost:8080"
 
 	// getHostMemInUse(cadvisorClient)
-	ProvisionCAdvisor(endpoint)
-	// ProvisionContainer()
 }
 
