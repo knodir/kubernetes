@@ -122,10 +122,14 @@ func checkErr(err error) {
 }
 
 func relay(listenAddr, servAddr string) {
+
+	fmt.Printf("Starting Relay...\n")
+
 	echo_listen_addr, err := net.ResolveTCPAddr("tcp", listenAddr+":3333")
 	checkErr(err)
 	echo_listener, err := net.ListenTCP("tcp", echo_listen_addr)
 	checkErr(err)
+	fmt.Printf("Resolved Listener...\n")
 	for true {
 		conn, _ := echo_listener.AcceptTCP()
 		fmt.Printf("Accepted Connection: %s\n", conn.RemoteAddr().String())
@@ -140,7 +144,7 @@ func serve_conn(client_conn *net.TCPConn, servAddr string) {
 	checkErr(err)
 	serv_conn, err := net.DialTCP("tcp", nil, servTCPAddr)
 	checkErr(err)
-
+	fmt.Printf("Started a relay connection....\n")
 	/*read from client_conn*/
 	for true {
 		n, err := client_conn.Read(packet[0:])
