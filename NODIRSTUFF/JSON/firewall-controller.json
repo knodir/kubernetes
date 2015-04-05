@@ -12,7 +12,7 @@
 				"id": "firewallcontroller",
 				"containers": [{
 					"name": "firewallcontroller",
-					"image": "quantumlight/firewall",
+					"image": "knodir/firewall",
 					"privileged": true, 
 				}]
 			}
