@@ -6,10 +6,12 @@ import ("fmt"
 	"os/exec"
 	"strings"
 	"bytes"
+	"bufio"
 	"log"
+	"strconv"
 
 	"github.com/google/cadvisor/client"
-	"github.com/google/cadvisor/info"
+	info "github.com/google/cadvisor/info/v1"
 )
 
 const READ_FREQ = 2 * time.Second
@@ -159,21 +161,69 @@ func getHostMemInUse(cadvisorClient *client.Client) {
 }
 
 
-// get size of replicationcontroller is operating on
-func getCurrentReplica() (replicas int) {
+// get current number of replicas of the given replicationcontroller 
+func getCurrentReplica(ctrlName string) (replicas int) {
 	// kubectl get rc --server=198.162.52.217:8080
 
+	// right now finding number of replicas of the given contoller is done manually;
+	// by string parsing. Fixme: automate this via kubectl golang client.
 	cmd := exec.Command("kubectl", "get", "rc", "--server=198.162.52.217:8080")
-	cmd.Stdin = strings.NewReader("some input")
+	// cmd.Stdin = strings.NewReader()
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("output is %q\n", out.String())
+	//fmt.Printf("output is %q\n", out.String())
 
-	replicas = 5
+	// go through each line and find the line which starts with the given ctrlName	
+	scanner := bufio.NewScanner(bytes.NewReader(out.Bytes()))
+	for scanner.Scan() {
+		lineText := scanner.Text()
+		if strings.HasPrefix(lineText, ctrlName) {
+			// fmt.Println(lineText)
+			// get the last digit of this line and return it as number of replicas
+			// fixme: this is really naive way, e.g. does not work when number of
+			// replicas are two or more digit number.
+			replicas, _ = strconv.Atoi(lineText[len(lineText)-1:])
+		}
+		
+	}
+	if err := scanner.Err(); err != nil {
+		fmt.Println("reading standard input:", err)
+	}
+	// fmt.Println(ctrlName, "has", replicas, "replicas")
+	return
+}
+
+// Get current number of replicas of the given replicationcontroller.
+// Return new size of the RC, i.e., returns value equal to newSize if success,
+// -1 otherwise.
+func resizeRC(ctrlName string, newSize int) (finalSize int) {
+	// we execute following command to resize number of replicas: 
+	// kubectl resize --replicas=1 rc firewallcontroller --server=198.162.52.217:8080
+	// Fixme: use kubectl Go client to do this in more general way
+
+	replicaSize := fmt.Sprintf("--replicas=%d", newSize)
+	// fmt.Println(replicaSize)
+	cmd := exec.Command("kubectl", "resize", replicaSize, "rc", ctrlName, "--server=198.162.52.217:8080")
+	// cmd.Stdin = strings.NewReader()
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	if err != nil {
+		log.Fatal(err)
+	}
+	// fmt.Printf("output is %s\n", out.String())
+
+	// successful execution returns string "resized\n", anything else is failure.
+	if out.String() == "resized\n" {
+		finalSize = newSize
+	} else {
+		finalSize = -1
+	}
+
 	return
 }
 
@@ -183,9 +233,14 @@ func ramBasedScaling(cadvisorClient *client.Client, containerName string) {
 	// var int usedPercentile 
 	// threshold := 80
 	counter := 0
+	increment := false
+	decrement := false
 
 	for {
 		fmt.Println("counter = ", counter)
+		increment = false
+		decrement = false
+		
 		// gets percentage utilization of the container
 		// usedPercentile = getContainerMemInUse(cadvisorClient, containerName)
 
@@ -201,17 +256,42 @@ func ramBasedScaling(cadvisorClient *client.Client, containerName string) {
 		// 	// do scale down
 		// }
 
+
 		// trigger scale up
-		if counter == 5 {
-			// increment number of containers by replicationcontroller resize command
-			currReplicas := getCurrentReplica()
-			fmt.Println("currReplicas = ", currReplicas)
-			// command := "kubectl resize --replicas=1 rc firewallcontroller --server=198.162.52.217:8080"
+		if counter == 1 {
+			increment = true
 		}
 
 		// trigger scale down
-		if counter == 45 {
+		if counter == 10 {
+			decrement = true
+		}
 
+		ctrlName := "firewallcontroller" // "echoservercontroller"
+		if increment {
+			// increment number of containers by replicationcontroller resize command			
+			currReplicas := getCurrentReplica(ctrlName)
+			fmt.Println("currReplicas =", currReplicas)
+
+			newReplicas := currReplicas + 1
+			if newReplicas == resizeRC(ctrlName, newReplicas) {
+				fmt.Println("resize is successful")
+			} else {
+				fmt.Println("resize is not successful")
+			}
+		}
+
+		if decrement {
+			// decrement number of containers by replicationcontroller resize command			
+			currReplicas := getCurrentReplica(ctrlName)
+			fmt.Println("currReplicas =", currReplicas)
+
+			newReplicas := currReplicas - 1
+			if newReplicas == resizeRC(ctrlName, newReplicas) {
+				fmt.Println("resize is successful")
+			} else {
+				fmt.Println("resize is not successful")
+			}
 		}
 
 		time.Sleep(READ_FREQ)
@@ -232,44 +312,26 @@ func netBasedScaling(cadvisorClient *client.Client, containerName string) {
 }
 
 func main() {
-	cadvisorClient, err := client.NewClient("http://198.162.52.217:9090/")
+	cadvisorClient, err := client.NewClient("http://localhost:9090/")
 	handleError("Could not create NewClient", err, true)	
 
-	// returns MachineInfo
-	mInfo, err := cadvisorClient.MachineInfo()
-	handleError("Could not get MachineInfo", err, false)
-	// fmt.Println("\nmachineInfo = ", mInfo)
-	// fmt.Printf("\nMemoryCapacity = %d\n", int64(mInfo.MemoryCapacity))
-	hostRam = mInfo.MemoryCapacity
-
-	// fmt.Println("\nTopology = ", mInfo.Topology)
-	// fmt.Println("\nFilesystems = ", mInfo.Filesystems)
-
-	containerName := "2da04ca875d0c08c49c4820cee74f3e37a5f64c7d5363b06d7580d7d8661d9bc"
+	contName := "2da04ca875d0c08c49c4820cee74f3e37a5f64c7d5363b06d7580d7d8661d9bc"
 
 	// Max number of stats to return.
 	numStats := 1
 	request := info.ContainerInfoRequest{NumStats: numStats}
 
 	// returns ContainerInfo struct
-	fullContName := "/docker/"+containerName
-	// fullContName := containerName
-	// cInfo, err := cadvisorClient.ContainerInfo(fullContName, &request)
-	_, err = cadvisorClient.ContainerInfo(fullContName, &request)
+	cInfo, err := cadvisorClient.DockerContainer(contName, &request)
 	handleError("Could not get container info", err, true)
-	// fmt.Println("\ncInfo =", cInfo)
+	fmt.Println("\ncInfo =", cInfo)
 
 	// fmt.Println("Name =", cInfo.Name)
 	// fmt.Println("Aliases =", cInfo.Aliases)
 	// fmt.Println("Namespace = ", cInfo.Namespace)
 
-	ramBasedScaling(cadvisorClient, containerName)
-	// cpuBasedScaling(cadvisorClient, containerName)
-	// netBasedScaling(cadvisorClient, containerName)
-
-    // endpoint := "unix:///var/run/docker.sock"
-    // endpoint := "http://localhost:8080"
-
-	// getHostMemInUse(cadvisorClient)
+	ramBasedScaling(cadvisorClient, contName)
+	// cpuBasedScaling(cadvisorClient, fullContName)
+	// netBasedScaling(cadvisorClient, fullContName)
 }
 
