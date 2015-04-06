@@ -132,9 +132,9 @@ func main() {
 	nat_map = make(map[int]net.IP)
 
 	/* Find machine IP and service IP */
-	fmt.Printf("Listing all devices\n")
+	fmt.Printf("[DEBUG] Listing all devices\n")
 	ifs, err = pcap.FindAllDevs()
-	handleError("Could not get all network devices", err, true)
+	handleError("[ERROR] Could not get all network devices", err, true)
 
 	for i := 0; i < len(ifs); i++ {
 		if ifs[i].Name == "eth0" {
@@ -142,7 +142,7 @@ func main() {
 		}
 	}
 
-	fmt.Printf("machine address is %s\n", machineAddr)
+	fmt.Printf("[DEBUG] machine address is %s\n", machineAddr)
 
 	env_var = os.Environ()
 	for i := 1; i < len(env_var); i++ {
@@ -153,12 +153,12 @@ func main() {
 	}
 
 	//	servAddr = os.Args[1]
-	fmt.Printf("server address is %s\n", servAddr)
+	fmt.Printf("[DEBUG] server address is %s\n", servAddr)
 
 	/* Install IPTABLE rule to bypass kernel network stack */
 	path, err = exec.LookPath("iptables")
-	handleError("can not find iptables", err, true)
-	fmt.Printf("path: %s\n", path)
+	handleError("[ERROR] can not find iptables", err, true)
+	fmt.Printf("[DEBUG] iptables is located at: %s\n", path)
 
 	// cmd := append([]string{"-A"}, "INPUT", "-p", "tcp", "-j", "NFQUEUE", "--queue-num", "0")
 	// err = exec.Command(path, cmd...).Run()
@@ -167,7 +167,7 @@ func main() {
 
 	/* Start netfilter to capture incoming packets*/
 	nfq, err = netfilter.NewNFQueue(0, 100, netfilter.NF_DEFAULT_PACKET_SIZE)
-	handleError("Could not create new netfilter queue", err, true)
+	handleError("[ERROR] could not create new netfilter queue", err, true)
 	defer nfq.Close()
 
 	/* Create syscall raw socket for writing packets out*/
@@ -183,15 +183,14 @@ func main() {
 		case <- tickChan:
 			for fwAddr, counterVal := range ip_count {
 				ip_count[fwAddr] = 0
-				fmt.Printf("Cleared message counter for [%s] counter was: %d\n", fwAddr, counterVal)
+				fmt.Printf("[INFO] cleared message counter for [%s] counter was: %d\n", fwAddr, counterVal)
 			}
 			// ip_count[ipv4.SrcIP.String()] = 0
 			// update operational threshold value from the etcd
 			updateOperThres()
 
 		case p := <-packets:
-			fmt.Printf("MAIN Incoming packet before processing:\n")
-			fmt.Println(p.Packet)
+			fmt.Println("[INFO] MAIN Incoming packet before processing:\n", p.Packet)
 			IPlayer := p.Packet.Layer(layers.LayerTypeIPv4)
 			ipv4, _ := IPlayer.(*layers.IPv4)
 			payload := ipv4.LayerPayload()
@@ -209,7 +208,7 @@ func main() {
 				 */
 				clientIPAddr := nat_map[int(tcp.DstPort)]
 				sendRedirect(int(tcp.DstPort), fd, clientIPAddr, ipv4, payload)
-				fmt.Printf("Processed response from servAddr\n")
+				fmt.Println("[INFO] Processed response from servAddr")
 
 			} else if ip_count[ipv4.SrcIP.String()] < operThres {
 				/* keep mappings and statistics
@@ -219,15 +218,15 @@ func main() {
 				 */
 				nat_map[int(tcp.SrcPort)] = ipv4.SrcIP
 				ip_count[ipv4.SrcIP.String()] = ip_count[ipv4.SrcIP.String()] + 1
-				fmt.Printf("ip_count addr: %s, cnt: %d\n", ipv4.SrcIP.String(), ip_count[ipv4.SrcIP.String()])
-				fmt.Printf("nat_map int: %d, val: %s\n", tcp.SrcPort, nat_map[int(tcp.SrcPort)])
+				fmt.Printf("[INFO] ip_count addr: %s, cnt: %d\n", ipv4.SrcIP.String(), ip_count[ipv4.SrcIP.String()])
+				fmt.Printf("[INFO] nat_map int: %d, val: %s\n", tcp.SrcPort, nat_map[int(tcp.SrcPort)])
 
 				/* We will redirect this packet to servAddr */
 				ipServ, port := getIPandPort(servAddr)
 				sendRedirect(port, fd, ipServ, ipv4, payload)
-				fmt.Printf("Processed Incoming Packet\n")
+				fmt.Println("[INFO] Processed Incoming Packet")
 			} else {
-				fmt.Printf("Number of packets exceeded threshold\n")
+				fmt.Printf("[INFO] Number of packets exceeded threshold\n")
 			}
 			p.SetVerdict(netfilter.NF_DROP)
 		}
@@ -276,6 +275,7 @@ func sendRedirect(port, fd int, addr net.IP, ipv4 *layers.IPv4, payload []byte) 
 	return err
 }
 
+// extract IP address and port number from string
 func getIPandPort(addr string) (servIP net.IP, port int) {
 	result := strings.Split(addr, ":")
 	servIP = net.ParseIP(result[0])
@@ -283,6 +283,7 @@ func getIPandPort(addr string) (servIP net.IP, port int) {
 	return
 }
 
+// compute the checksum
 func csum(b []byte) uint16 {
 	var s uint32
 	fmt.Printf("% X\n", b)
