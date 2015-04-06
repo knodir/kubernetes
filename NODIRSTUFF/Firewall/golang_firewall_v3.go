@@ -5,12 +5,7 @@ package main
 
 import (
 	//	"./Netfilter"
-	"code.google.com/p/gopacket"
-	"code.google.com/p/gopacket/layers"
-	"code.google.com/p/gopacket/pcap"
 	"fmt"
-	"github.com/openshift/geard/pkg/go-netfilter-queue"
-	"log"
 	"net"
 	"os"
 	"time"
@@ -18,10 +13,104 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"code.google.com/p/gopacket"
+	"code.google.com/p/gopacket/layers"
+	"code.google.com/p/gopacket/pcap"
+	"github.com/openshift/geard/pkg/go-netfilter-queue"
+	"github.com/coreos/go-etcd/etcd"
 )
 
 var ip_count map[string]int
 var nat_map map[int]net.IP
+
+var localThresPath string // etcd path from which we read the threshold of this firewall instance
+var operThres int // operational threshold, continiously updated from etcd 
+
+
+// Prints error message (err) with caller provided string (msg).
+// Terminate the program if terminate=true (continue execution otherwise).
+func handleError(msg string, err error, terminate bool) {
+	// do not take any action if operation succeeded, i.e., err=nil
+	if err != nil {
+		fmt.Printf("%s: %s\n", msg, err)
+		// terminate program if terminate=True
+		if terminate {
+			os.Exit(0)
+		}
+	}
+}
+
+// run for the first time and determine operational value of the threshold
+func registerAndPutThres(initThres int) {
+
+	// Create client to connect to the etcd.
+	k8sMaster := []string{"http://198.162.52.217:4001"}
+	client := etcd.NewClient(k8sMaster)
+
+	aggrThresPath := "/firewall/aggr"
+
+	// check if aggregate path already exists
+	ret, err := client.Get(aggrThresPath, false, false)
+	if err != nil {
+		// Path does not exist. This is the first instance of the Pod.
+		// Insert aggregate threshold value at /firewall/aggr/
+		ret, err = client.Set(aggrThresPath, strconv.Itoa(initThres), 0)
+		handleError("[ERROR] Could not Set the aggr value to the etcd", err, true)
+		fmt.Println("[INFO] Successfully set the aggregate threshold")
+
+		// assign total aggregate value to this firewall instance.
+		localThresPath = "/firewall/ins1"
+		ret, err = client.Set(localThresPath, strconv.Itoa(initThres), 0)
+		handleError("[ERROR] Could not set local value to the etcd", err, true)
+		fmt.Printf("[INFO] Successfully set initThres: %d to [%s]\n", initThres, localThresPath)
+
+	} else {
+		// Aggregate path does exist. This is not the first instance of the Pod.
+		// Count how many Pods exist and divide /firewall/aggr value evenly.
+		// Update local threshold of the all instances with new value.
+		ret, err = client.Get("/firewall/aggr", false, true)
+		handleError("[ERROR] Could not read aggr value from etcd", err, true)
+		aggrThresVal, _ := strconv.Atoi(ret.Node.Value)
+		fmt.Println("[INFO] aggrThresVal =", aggrThresVal)
+
+		ret, err = client.Get("/firewall", false, true)
+		handleError("[ERROR] Could not read value from the etcd", err, true)
+
+		totalInstances := ret.Node.Nodes.Len() - 1 // -1 for /firewall/aggr
+		fmt.Println("[INFO] number of total instances =", totalInstances)
+
+		newThresVal := aggrThresVal / (totalInstances + 1) // +1 for the instance being created
+		fmt.Println("[INFO] newThresVal =", newThresVal)
+
+		for _, node := range ret.Node.Nodes {
+			// assign newThresVal to all instances, except /firewall/aggr
+			if node.Key != aggrThresPath {
+				ret, err = client.Set(node.Key, strconv.Itoa(newThresVal), 0)
+				handleError(fmt.Sprintf("[ERROR] Could not set newThresVal to %s", node.Key), err, true)
+				fmt.Printf("[INFO] Successfully set newThresVal: %d to [%s]\n", newThresVal, node.Key)
+			}			
+		}
+
+		// assign newThresVal to the instance being created
+		localThresPath = "/firewall/ins" + strconv.Itoa(totalInstances+1)
+		ret, err = client.Set(localThresPath, strconv.Itoa(newThresVal), 0)
+		handleError(fmt.Sprintf("[ERROR] Could not set newThresVal to %s", localThresPath), err, true)
+		fmt.Printf("[INFO] Successfully set newThresVal: %d to [%s]\n", newThresVal, localThresPath)
+	}	
+}
+
+// continously called to update operational threshold value from the etcd
+func updateOperThres() {
+	k8sMaster := []string{"http://198.162.52.217:4001"}
+	client := etcd.NewClient(k8sMaster)
+
+	ret, err := client.Get(localThresPath, false, false)
+	handleError("[ERROR] Could not read value from the etcd", err, true)
+
+	operThres, _ = strconv.Atoi(ret.Node.Value)
+	fmt.Println("[INFO] Updated operThres to:", ret.Node.Value)
+}
 
 func main() {
 	/* Firewall local state variables */
@@ -34,6 +123,8 @@ func main() {
 	var err error
 	const THRESHOLD int = 100 // indicates number of messages per second
 
+	registerAndPutThres(THRESHOLD)
+	
 	// ticker to clear msg counter every second
 	tickChan := time.NewTicker(time.Second).C
 
@@ -43,7 +134,7 @@ func main() {
 	/* Find machine IP and service IP */
 	fmt.Printf("Listing all devices\n")
 	ifs, err = pcap.FindAllDevs()
-	checkErr(err)
+	handleError("Could not get all network devices", err, true)
 
 	for i := 0; i < len(ifs); i++ {
 		if ifs[i].Name == "eth0" {
@@ -66,18 +157,17 @@ func main() {
 
 	/* Install IPTABLE rule to bypass kernel network stack */
 	path, err = exec.LookPath("iptables")
-	checkErr(err)
+	handleError("can not find iptables", err, true)
 	fmt.Printf("path: %s\n", path)
 
-	cmd := append([]string{"-A"}, "INPUT", "-p", "tcp", "-j", "NFQUEUE", "--queue-num", "0")
-	err = exec.Command(path, cmd...).Run()
-	checkErr(err)
-	fmt.Printf("Added iptable rules to bypass kernel network stack\n")
+	// cmd := append([]string{"-A"}, "INPUT", "-p", "tcp", "-j", "NFQUEUE", "--queue-num", "0")
+	// err = exec.Command(path, cmd...).Run()
+	// handleError("Could not add iptables rules", err, true)
+	// fmt.Printf("Added iptable rules to bypass kernel network stack\n")
 
 	/* Start netfilter to capture incoming packets*/
 	nfq, err = netfilter.NewNFQueue(0, 100, netfilter.NF_DEFAULT_PACKET_SIZE)
-
-	checkErr(err)
+	handleError("Could not create new netfilter queue", err, true)
 	defer nfq.Close()
 
 	/* Create syscall raw socket for writing packets out*/
@@ -91,11 +181,13 @@ func main() {
 		select {
 
 		case <- tickChan:
-			fmt.Printf("Cleared message counter, was: %d\n")
 			for fwAddr, counterVal := range ip_count {
-				fmt.Printf("Firewall %s counter is %d\n", fwAddr, counterVal)
+				ip_count[fwAddr] = 0
+				fmt.Printf("Cleared message counter for [%s] counter was: %d\n", fwAddr, counterVal)
 			}
 			// ip_count[ipv4.SrcIP.String()] = 0
+			// update operational threshold value from the etcd
+			updateOperThres()
 
 		case p := <-packets:
 			fmt.Printf("MAIN Incoming packet before processing:\n")
@@ -119,7 +211,7 @@ func main() {
 				sendRedirect(int(tcp.DstPort), fd, clientIPAddr, ipv4, payload)
 				fmt.Printf("Processed response from servAddr\n")
 
-			} else if ip_count[ipv4.SrcIP.String()] < THRESHOLD {
+			} else if ip_count[ipv4.SrcIP.String()] < operThres {
 				/* keep mappings and statistics
 				 * currently we can just use tcp.SrcPort, because we do not remap since we only receive one IP address
 				 * from kube-proxy who can ensure it does not reuse SrcPorts that is already in use. If expanded to multi-IPs srcs
@@ -143,11 +235,6 @@ func main() {
 	}
 }
 
-func checkErr(err error) {
-	if err != nil {
-		log.Fatal(err)
-	}
-}
 
 func sendRedirect(port, fd int, addr net.IP, ipv4 *layers.IPv4, payload []byte) error {
 	newIPv4 := &layers.IPv4{
