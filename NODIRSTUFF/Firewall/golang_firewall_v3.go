@@ -108,8 +108,12 @@ func updateOperThres() {
 	ret, err := client.Get(localThresPath, false, false)
 	handleError("[ERROR] Could not read value from the etcd", err, true)
 
-	operThres, _ = strconv.Atoi(ret.Node.Value)
-	fmt.Println("[INFO] Updated operThres to:", ret.Node.Value)
+	newOperThres, _ := strconv.Atoi(ret.Node.Value)
+	if newOperThres != operThres {
+		fmt.Printf("[INFO] Updated operThres from %d to %d\n", operThres, newOperThres)
+		operThres = newOperThres
+	}
+
 }
 
 func main() {
@@ -160,10 +164,10 @@ func main() {
 	handleError("[ERROR] can not find iptables", err, true)
 	fmt.Printf("[DEBUG] iptables is located at: %s\n", path)
 
-	// cmd := append([]string{"-A"}, "INPUT", "-p", "tcp", "-j", "NFQUEUE", "--queue-num", "0")
-	// err = exec.Command(path, cmd...).Run()
-	// handleError("Could not add iptables rules", err, true)
-	// fmt.Printf("Added iptable rules to bypass kernel network stack\n")
+	cmd := append([]string{"-A"}, "INPUT", "-p", "tcp", "-j", "NFQUEUE", "--queue-num", "0")
+	err = exec.Command(path, cmd...).Run()
+	handleError("[ERROR] Could not add iptables rules", err, true)
+	fmt.Printf("[DEBUG] Added iptable rules to bypass kernel network stack\n")
 
 	/* Start netfilter to capture incoming packets*/
 	nfq, err = netfilter.NewNFQueue(0, 100, netfilter.NF_DEFAULT_PACKET_SIZE)

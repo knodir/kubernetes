@@ -9,6 +9,9 @@ import ("fmt"
 	"bufio"
 	"log"
 	"strconv"
+	"flag"
+	// "net/http"
+	// "io/ioutil"
 
 	"github.com/google/cadvisor/client"
 	info "github.com/google/cadvisor/info/v1"
@@ -127,40 +130,6 @@ func getContainerNetInUse(cadvisorClient *client.Client, containerName string) {
 	// }
 }
 
-
-// Returns percentage of the memory being used in the host machine. 
-func getHostMemInUse(cadvisorClient *client.Client) {
-	// Max number of stats to return.
-	numStats := 1
-	request := info.ContainerInfoRequest{NumStats: numStats}
-	rootPath := "/"
-
-	for {
-		// returns ContainerInfo struct
-		cInfo, err := cadvisorClient.ContainerInfo(rootPath, &request)
-		handleError("Could not get the host info", err, true)
-
-		// // returns *ContainerSpec
-		// spec := cInfo.Spec
-		// // returns *MemorySpec
-		// memorySpecs := spec.Memory
-		// fmt.Printf("\nLimit = %d\n", uint64(memorySpecs.Limit))
-		// fmt.Printf("Reservation = %d\n", uint64(memorySpecs.Reservation))
-		// fmt.Println("SwapLimit = %d\n", uint64(memorySpecs.SwapLimit))
-		
-		// returns *ContainerStats
-		stats := cInfo.Stats[0]
-
-		// returns MemoryStats
-		memoryStats := stats.Memory
-		fmt.Printf("WorkingSet = %d, Usage = %d\n", memoryStats.WorkingSet, memoryStats.Usage)
-		usedPercentile := 100 * int64(memoryStats.Usage) / int64(hostRam)
-		fmt.Printf("mem usage: %d\n", usedPercentile)
-		time.Sleep(READ_FREQ)
-	}
-}
-
-
 // get current number of replicas of the given replicationcontroller 
 func getCurrentReplica(ctrlName string) (replicas int) {
 	// kubectl get rc --server=198.162.52.217:8080
@@ -228,7 +197,8 @@ func resizeRC(ctrlName string, newSize int) (finalSize int) {
 }
 
 // provision additional container when current container reaches specific RAM threshold.
-func ramBasedScaling(cadvisorClient *client.Client, containerName string) {
+func ramBasedScaling(cadvisorClient *client.Client, ctrlName string,
+	shortContName string, fullContName string) {
 	
 	// var int usedPercentile 
 	// threshold := 80
@@ -237,12 +207,12 @@ func ramBasedScaling(cadvisorClient *client.Client, containerName string) {
 	decrement := false
 
 	for {
-		fmt.Println("counter = ", counter)
+		fmt.Printf("[INFO][%s] counter = %d\n", shortContName, counter)
 		increment = false
 		decrement = false
 		
 		// gets percentage utilization of the container
-		// usedPercentile = getContainerMemInUse(cadvisorClient, containerName)
+		// usedPercentile = getContainerMemInUse(cadvisorClient, fullContName)
 
 		// Decide if container reached the predefined threshold.
 		// Since k8s does not support resource limitation yet, 
@@ -258,39 +228,38 @@ func ramBasedScaling(cadvisorClient *client.Client, containerName string) {
 
 
 		// trigger scale up
-		if counter == 1 {
+		if counter == 5 {
 			increment = true
 		}
 
 		// trigger scale down
-		if counter == 10 {
+		if counter == 15 {
 			decrement = true
 		}
 
-		ctrlName := "firewallcontroller" // "echoservercontroller"
 		if increment {
-			// increment number of containers by replicationcontroller resize command			
+			// increment number of containers via replicationcontroller resize command			
 			currReplicas := getCurrentReplica(ctrlName)
-			fmt.Println("currReplicas =", currReplicas)
+			fmt.Printf("[INFO][%s] currReplicas = %d\n", shortContName, currReplicas)
 
 			newReplicas := currReplicas + 1
 			if newReplicas == resizeRC(ctrlName, newReplicas) {
-				fmt.Println("resize is successful")
+				fmt.Printf("[INFO][%s] resize is successful\n", shortContName)
 			} else {
-				fmt.Println("resize is not successful")
+				fmt.Printf("[INFO][%s] resize is not successful\n", shortContName)
 			}
 		}
 
 		if decrement {
 			// decrement number of containers by replicationcontroller resize command			
 			currReplicas := getCurrentReplica(ctrlName)
-			fmt.Println("currReplicas =", currReplicas)
+			fmt.Printf("[INFO][%s] currReplicas = %d\n", shortContName, currReplicas)
 
 			newReplicas := currReplicas - 1
 			if newReplicas == resizeRC(ctrlName, newReplicas) {
-				fmt.Println("resize is successful")
+				fmt.Printf("[INFO][%s] resize is successful\n", shortContName)
 			} else {
-				fmt.Println("resize is not successful")
+				fmt.Printf("[INFO][%s] resize is not successful\n", shortContName)
 			}
 		}
 
@@ -311,27 +280,195 @@ func netBasedScaling(cadvisorClient *client.Client, containerName string) {
 	getContainerNetInUse(cadvisorClient, containerName)
 }
 
-func main() {
-	cadvisorClient, err := client.NewClient("http://localhost:9090/")
-	handleError("Could not create NewClient", err, true)	
 
-	contName := "2da04ca875d0c08c49c4820cee74f3e37a5f64c7d5363b06d7580d7d8661d9bc"
+// returns name of the Docker image pod is running
+func getPodImage(podName string) (dockerImage string) {
+
+	// // kubectl exposes REST API, which will return all information in JSON.
+	// // fixme: it would be more general solution if this JSON format is parsed 
+	// // to retrieve Docker image name. However, as a quick & dirty solution, 
+	// // I'll use exec(kubectl) and parse its string result. One also could consider
+	// // writing go-kubectl client to expose convenient data structures to access JSON field,
+	// // just like go-dockerclient parses JSON commands returned from docker CLI cmd. 
+	// // Here is the short sample to retrieve kubectl REST result.
+	// resp, err := http.Get("http://198.162.52.217:8080/api/v1beta1/pods")
+	// if err != nil {
+	// 	// handle error
+	// }
+	// defer resp.Body.Close()
+	// body, err := ioutil.ReadAll(resp.Body)
+	// responseJson := string(body)
+	// fmt.Printf("responseJson = %s\n", responseJson)
+
+	cmd := exec.Command("kubectl", "get", "pods", "--server=198.162.52.217:8080")
+	// cmd.Stdin = strings.NewReader()
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	if err != nil {
+		log.Fatal(err)
+	}
+	// fmt.Printf("output is %s\n", out.String())
+
+	// go through each line and find the line which starts with the given ctrlName	
+	scanner := bufio.NewScanner(bytes.NewReader(out.Bytes()))
+	for scanner.Scan() {
+		lineText := scanner.Text()
+		if strings.HasPrefix(lineText, podName) {
+			fields := strings.Fields(lineText)
+
+			// for index := range fields {
+			// 	fmt.Println(index, fields[index])
+			// }
+
+			// kubectl get pods returns pod information in following order
+			// POD, IP, CONTAINER(S), IMAGE(S), HOST, LABELS, STATUS
+			// we need to get field[3] to get the image pod running
+			dockerImage = fields[3]
+
+			// since pod always runs the same image, we can break the loop once we found pod
+			break
+		}
+	}
+	return
+}
+
+// get short and full ID of the containers running this image
+func getContIDs(imageName string) (contIDs map[string]string) {
+	contIDs = make(map[string]string)
+	cmd := exec.Command("docker", "ps", "--no-trunc")
+	// cmd.Stdin = strings.NewReader()
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	if err != nil {
+		log.Fatal(err)
+	}
+	// fmt.Printf("output is %s\n", out.String())
+
+	// go through each line and find the line which has given imageName
+	scanner := bufio.NewScanner(bytes.NewReader(out.Bytes()))
+	for scanner.Scan() {
+		lineText := scanner.Text()
+		// docker ps return information of running containers in the following order
+		// CONTAINER ID, IMAGE, COMMAND, CREATED, STATUS, PORTS, NAMES
+		// we get field[1] to check if this is the image we want. 
+		// If so, field[0] is a container ID. We assign first 12 bytes of a container
+		// as a short ID, and leave entire length for a full ID.
+		fields := strings.Fields(lineText)
+		dockerImage := fields[1]
+		if strings.HasPrefix(dockerImage, imageName) {
+			// fmt.Println(fields[0][0:12], fields[0])
+			contIDs[fields[0][0:12]] = fields[0]
+		}
+	}
+	return
+}
+
+func main() {
+
+	// maps Docker short ID (12 bytes) to full ID (64 bytes)
+	var prevContIDs map[string]string
+	var currContIDs map[string]string
+	var prevSize, currSize int
+
+
+	controllerName := flag.String("pod", "None", "specify the name of the pod to monitor")
+	flag.Parse()
+	fmt.Println("controllerName =", *controllerName)
+
+	// create cAdvisor client to monitor Docker instances
+	cadvisorClient, err := client.NewClient("http://localhost:9090/")
+	handleError("[ERROR] Could not create NewClient", err, true)
 
 	// Max number of stats to return.
 	numStats := 1
 	request := info.ContainerInfoRequest{NumStats: numStats}
 
-	// returns ContainerInfo struct
-	cInfo, err := cadvisorClient.DockerContainer(contName, &request)
-	handleError("Could not get container info", err, true)
-	fmt.Println("\ncInfo =", cInfo)
 
-	// fmt.Println("Name =", cInfo.Name)
-	// fmt.Println("Aliases =", cInfo.Aliases)
-	// fmt.Println("Namespace = ", cInfo.Namespace)
+	// get name of the image pod is running
+	dockerImage := getPodImage(*controllerName)
+	fmt.Println("dockerImage =", dockerImage)		
 
-	ramBasedScaling(cadvisorClient, contName)
-	// cpuBasedScaling(cadvisorClient, fullContName)
-	// netBasedScaling(cadvisorClient, fullContName)
+	// get container ID running this image
+	prevContIDs = getContIDs(dockerImage)
+	fmt.Println("prevContIDs =", prevContIDs)
+
+	// run monitoring mechanism for all newly created container
+	for shortContName, fullContName := range prevContIDs {
+		// returns ContainerInfo struct
+		cInfo, err := cadvisorClient.DockerContainer(fullContName, &request)
+		handleError("[ERROR] Could not get container info", err, true)
+		fmt.Println("\ncInfo =", cInfo)
+
+		// fmt.Printf("Name = %s, Aliases = %s, Namespace = %s", cInfo.Name, cInfo.Aliases, cInfo.Namespace)
+
+		// run each Docker monitoring in a separate goroutine
+		go ramBasedScaling(cadvisorClient, *controllerName, shortContName, fullContName)
+		// cpuBasedScaling(cadvisorClient, fullContName)
+		// netBasedScaling(cadvisorClient, fullContName)				
+	}
+
+	// continuously check Docker instances of this pod (i.e., running this image)
+	// and monitor each instance for resource consumption.
+	for {
+		time.Sleep(READ_FREQ)
+		newContainers := make(map[string]string)
+		deletedContainers := make(map[string]string)
+
+		// get currently running container ID with this image
+		currContIDs = getContIDs(dockerImage)
+		fmt.Println("[DEBUG] currContIDs =", currContIDs)
+
+		// If number of previous and currently running containers does not match that means
+		// number of pod was resized. We need to find whether it was increased 
+		// or decreased, and which pod exactly got created or deleted. If they do match, 
+		// we check if both sets have same items.
+		prevSize = len(prevContIDs)
+		currSize = len(currContIDs)
+		if currSize != prevSize {
+			fmt.Printf("[INFO] Pod was resized from [%d] to [%d]\n", prevSize, currSize)
+			if (currSize > prevSize) {
+				// Pod size was increased. Go over the current list of containers and 
+				// find which pod(s) are added.				
+				for key, val := range currContIDs {
+					if prevContIDs[key] == "" {
+						newContainers[key] = val
+					}
+				}
+				fmt.Println("[DEBUG] newContainers =", newContainers)
+			} else {
+				// Pod size was decreased. Go over the previous list of containers and 
+				// find which pod(s) were deleted.
+				for key, val := range prevContIDs {
+					if currContIDs[key] == "" {
+						deletedContainers[key] = val
+					}
+				}
+				fmt.Println("[DEBUG] deletedContainers =", deletedContainers)
+			}
+		} else {
+			// This case rarely happens. It is most likely to happen when READ_FREQ duration is too large, 
+			// i.e., one pod dies and replication controller creates another one to replace it.
+			// Both of these actions should happen within the same READ_FREQ interval. 
+			// In such case, monitoring module should go over each container's state in etcd,
+			// remove stale values and update other ones accordingly.
+
+			fmt.Println("numbers are the same")
+		}
+		prevContIDs = currContIDs
+
+		if len(newContainers) != 0 {
+			// run monitoring mechanism for all newly created container
+			for shortContName, fullContName := range newContainers {
+				// returns ContainerInfo struct
+				cInfo, err := cadvisorClient.DockerContainer(fullContName, &request)
+				handleError(fmt.Sprintf("[ERROR] Could not get container [%s] info", shortContName), err, true)
+				fmt.Printf("[INFO][%s] cInfo = %s\n", shortContName, cInfo)
+
+				go ramBasedScaling(cadvisorClient, *controllerName, shortContName, fullContName)
+			}
+		}
+	}
 }
 
