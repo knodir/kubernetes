@@ -42,7 +42,7 @@ func getContainerCpuInUse(cadvisorClient *client.Client, containerName string) {
 
 	for {
 		// returns ContainerInfo struct
-		cInfo, err := cadvisorClient.ContainerInfo(containerName, &request)
+		cInfo, err := cadvisorClient.DockerContainer(containerName, &request)
 		handleError("Could not get container info", err, true)
 
 		// returns ContainerSpec
@@ -58,15 +58,22 @@ func getContainerCpuInUse(cadvisorClient *client.Client, containerName string) {
 	}
 }
 
-// Returns percentage of the memory being used. 
-func getContainerMemInUse(cadvisorClient *client.Client, containerName string) (usedPercentile int)  {
+// Returns percentage of the memory being used. Returns -1 if container is terminated.
+func getContainerMemInUse(cadvisorClient *client.Client, 
+	shortContName string, fullContName string) (usedPercentile int)  {
 	// Max number of stats to return.
 	numStats := 1
 	request := info.ContainerInfoRequest{NumStats: numStats}
 
 	// returns ContainerInfo struct
-	cInfo, err := cadvisorClient.ContainerInfo(containerName, &request)
-	handleError("Could not get container info", err, true)
+	cInfo, err := cadvisorClient.DockerContainer(fullContName, &request)
+	if err != nil {
+		// this means container was deleted (probably by replication controller).
+		// we return -1 indicating termination of this container.
+		fmt.Printf("[INFO][%s] this container got terminated\n", shortContName)
+		return -1
+		// handleError(fmt.Sprintf("[ERROR] Could not get container [%s] info", shortContName), err, true)
+	}
 
 	// returns *ContainerSpec
 	spec := cInfo.Spec
@@ -83,9 +90,9 @@ func getContainerMemInUse(cadvisorClient *client.Client, containerName string) (
 	// returns MemoryStats
 	memoryStats := stats.Memory
 	usedPercentile = 100 * int(memoryStats.WorkingSet / memorySpecs.Limit)
-	fmt.Printf("WorkingSet = %d, Usage = %d, Max = %d, Perc = %d\n", memoryStats.WorkingSet, memoryStats.Usage, memorySpecs.Limit, usedPercentile)
+	// fmt.Printf("[DEBUG] WorkingSet = %d, Usage = %d, Max = %d, Perc = %d\n", memoryStats.WorkingSet, memoryStats.Usage, memorySpecs.Limit, usedPercentile)
 	
-	return usedPercentile
+	return 
 }
 
 // get container's network stats
@@ -96,7 +103,7 @@ func getContainerNetInUse(cadvisorClient *client.Client, containerName string) {
 
 	for {
 		// returns ContainerInfo struct
-		cInfo, err := cadvisorClient.ContainerInfo(containerName, &request)
+		cInfo, err := cadvisorClient.DockerContainer(containerName, &request)
 		handleError("Could not get container info", err, true)
 
 		// returns *ContainerStats
@@ -212,7 +219,15 @@ func ramBasedScaling(cadvisorClient *client.Client, ctrlName string,
 		decrement = false
 		
 		// gets percentage utilization of the container
-		// usedPercentile = getContainerMemInUse(cadvisorClient, fullContName)
+		usedPercentile := getContainerMemInUse(cadvisorClient, shortContName, fullContName)
+		// fmt.Printf("[DEBUG][%s] usedPercentile = %d", shortContName, usedPercentile)
+
+		if usedPercentile == -1 {
+			// monitoring module return -1 percentile when container gets terminated.
+			// we need to terminate scaling mechanism as well; by exiting endless loop.
+			fmt.Printf("[INFO][%s] Stopping container since monitoring stopped.\n", shortContName)
+			break
+		}
 
 		// Decide if container reached the predefined threshold.
 		// Since k8s does not support resource limitation yet, 
@@ -463,8 +478,8 @@ func main() {
 			for shortContName, fullContName := range newContainers {
 				// returns ContainerInfo struct
 				cInfo, err := cadvisorClient.DockerContainer(fullContName, &request)
-				handleError(fmt.Sprintf("[ERROR] Could not get container [%s] info", shortContName), err, true)
-				fmt.Printf("[INFO][%s] cInfo = %s\n", shortContName, cInfo)
+				handleError(fmt.Sprintf("[ERROR][%s] Could not get container info", shortContName), err, true)
+				// fmt.Printf("[INFO][%s] cInfo = %s\n", shortContName, cInfo)
 
 				go ramBasedScaling(cadvisorClient, *controllerName, shortContName, fullContName)
 			}
