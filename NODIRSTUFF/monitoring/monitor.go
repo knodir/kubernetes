@@ -15,6 +15,7 @@ import ("fmt"
 
 	"github.com/google/cadvisor/client"
 	info "github.com/google/cadvisor/info/v1"
+	"github.com/coreos/go-etcd/etcd"
 )
 
 const READ_FREQ = 2 * time.Second
@@ -243,12 +244,12 @@ func ramBasedScaling(cadvisorClient *client.Client, ctrlName string,
 
 
 		// trigger scale up
-		if counter == 5 {
+		if counter == 3 {
 			increment = true
 		}
 
 		// trigger scale down
-		if counter == 15 {
+		if counter == 6 {
 			decrement = true
 		}
 
@@ -348,6 +349,78 @@ func getPodImage(podName string) (dockerImage string) {
 	return
 }
 
+// This function removes the etcd state associated with the deleted container, and 
+// rewrites all state associated with other running containers. 
+// We clean state by simply removing /firewall/<docker-id> key from etcd. 
+// The new state of the running containers are computed from an aggregate value and 
+// assigned to each running container's etcd path /firewall/<docker-id> 
+func cleanContState(deletedConts, runningConts map[string]string) {
+	k8sMaster := []string{"http://198.162.52.217:4001"}
+	client := etcd.NewClient(k8sMaster)
+
+	aggrThresPath := "/firewall/aggr"
+	mboxName := "/firewall/"
+
+	for shortContName, _ := range deletedConts {
+		// rm shared state for this container
+		statePath := mboxName + shortContName // e.g., /firewall/9b253158512e
+		_, err := client.Delete(statePath, true)
+		if err != nil {
+			handleError(fmt.Sprintf("[ERROR] Could not clean %s from etcd", statePath), err, false)
+		} else {
+			fmt.Printf("[INFO] Successfully cleaned %s\n", statePath)
+		}
+
+	}
+
+	// check if aggregate path already exists
+	ret, err := client.Get(aggrThresPath, false, false)
+	if err != nil {
+		// Path does not exist.
+		fmt.Println("[WARN] aggr path does not exist")
+
+		// // assign total aggregate value to this firewall instance.
+		// localThresPath = "/firewall/ins1"
+		// ret, err = client.Set(localThresPath, strconv.Itoa(initThres), 0)
+		// handleError("[ERROR] Could not set local value to the etcd", err, true)
+		// fmt.Printf("[INFO] Successfully set initThres: %d to [%s]\n", initThres, localThresPath)
+
+	} else {
+		// Aggregate path does exist. This is not the first instance of the Pod.
+		// Count how many Pods exist and divide /firewall/aggr value evenly.
+		// Update local threshold of the all instances with new value.
+		aggrThresVal, _ := strconv.Atoi(ret.Node.Value)
+		fmt.Println("[INFO] aggrThresVal =", aggrThresVal)
+
+		// ret, err = client.Get("/firewall", false, true)
+		// handleError("[ERROR] Could not read value from the etcd", err, true)
+
+		// totalInstances := ret.Node.Nodes.Len() - 1 // -1 for /firewall/aggr
+		// fmt.Println("[INFO] number of total instances =", totalInstances)
+
+		// newThresVal := aggrThresVal / (totalInstances + 1) // +1 for the instance being created
+		// fmt.Println("[INFO] newThresVal =", newThresVal)
+
+		// for _, node := range ret.Node.Nodes {
+		// 	// assign newThresVal to all instances, except /firewall/aggr
+		// 	if node.Key != aggrThresPath {
+		// 		ret, err = client.Set(node.Key, strconv.Itoa(newThresVal), 0)
+		// 		handleError(fmt.Sprintf("[ERROR] Could not set newThresVal to %s", node.Key), err, true)
+		// 		fmt.Printf("[INFO] Successfully set newThresVal: %d to [%s]\n", newThresVal, node.Key)
+		// 	}			
+		// }
+
+		// hostname, _ := os.Hostname()
+		// // fmt.Println("[DEBUG] hostname =", hostname)
+		// // assign newThresVal to the instance being created
+		// localThresPath = "/firewall/" + hostname
+		// ret, err = client.Set(localThresPath, strconv.Itoa(newThresVal), 0)
+		// handleError(fmt.Sprintf("[ERROR] Could not set newThresVal to %s", localThresPath), err, true)
+		// fmt.Printf("[INFO] Successfully set newThresVal: %d to [%s]\n", newThresVal, localThresPath)
+	}	
+	
+}
+
 // get short and full ID of the containers running this image
 func getContIDs(imageName string) (contIDs map[string]string) {
 	contIDs = make(map[string]string)
@@ -388,9 +461,13 @@ func main() {
 	var prevSize, currSize int
 
 
-	controllerName := flag.String("pod", "None", "specify the name of the pod to monitor")
+	controllerName := flag.String("controller", "None", "specify the name of the controller to monitor")
 	flag.Parse()
-	fmt.Println("controllerName =", *controllerName)
+
+	if *controllerName == "None" {
+		fmt.Println("Usage: ./monitor --controller=<k8s-replication_controller-name>")
+		os.Exit(0)
+	}
 
 	// create cAdvisor client to monitor Docker instances
 	cadvisorClient, err := client.NewClient("http://localhost:9090/")
@@ -476,14 +553,15 @@ func main() {
 		if len(newContainers) != 0 {
 			// run monitoring mechanism for all newly created container
 			for shortContName, fullContName := range newContainers {
-				// returns ContainerInfo struct
-				cInfo, err := cadvisorClient.DockerContainer(fullContName, &request)
-				handleError(fmt.Sprintf("[ERROR][%s] Could not get container info", shortContName), err, true)
-				// fmt.Printf("[INFO][%s] cInfo = %s\n", shortContName, cInfo)
-
 				go ramBasedScaling(cadvisorClient, *controllerName, shortContName, fullContName)
 			}
 		}
+
+		if len(deletedContainers) != 0 {
+			// clean state of the deleted container and fix for all other running containers
+			cleanContState(deletedContainers, currContIDs)
+		}
+
 	}
 }
 

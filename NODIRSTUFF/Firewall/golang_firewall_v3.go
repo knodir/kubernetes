@@ -69,7 +69,7 @@ func registerAndPutThres(initThres int) {
 		// Aggregate path does exist. This is not the first instance of the Pod.
 		// Count how many Pods exist and divide /firewall/aggr value evenly.
 		// Update local threshold of the all instances with new value.
-		ret, err = client.Get("/firewall/aggr", false, true)
+
 		handleError("[ERROR] Could not read aggr value from etcd", err, true)
 		aggrThresVal, _ := strconv.Atoi(ret.Node.Value)
 		fmt.Println("[INFO] aggrThresVal =", aggrThresVal)
@@ -92,12 +92,14 @@ func registerAndPutThres(initThres int) {
 			}			
 		}
 
+		hostname, _ := os.Hostname()
+		// fmt.Println("[DEBUG] hostname =", hostname)
 		// assign newThresVal to the instance being created
-		localThresPath = "/firewall/ins" + strconv.Itoa(totalInstances+1)
+		localThresPath = "/firewall/" + hostname
 		ret, err = client.Set(localThresPath, strconv.Itoa(newThresVal), 0)
 		handleError(fmt.Sprintf("[ERROR] Could not set newThresVal to %s", localThresPath), err, true)
 		fmt.Printf("[INFO] Successfully set newThresVal: %d to [%s]\n", newThresVal, localThresPath)
-	}	
+	}
 }
 
 // continously called to update operational threshold value from the etcd
@@ -164,10 +166,10 @@ func main() {
 	handleError("[ERROR] can not find iptables", err, true)
 	fmt.Printf("[DEBUG] iptables is located at: %s\n", path)
 
-	cmd := append([]string{"-A"}, "INPUT", "-p", "tcp", "-j", "NFQUEUE", "--queue-num", "0")
-	err = exec.Command(path, cmd...).Run()
-	handleError("[ERROR] Could not add iptables rules", err, true)
-	fmt.Printf("[DEBUG] Added iptable rules to bypass kernel network stack\n")
+	// cmd := append([]string{"-A"}, "INPUT", "-p", "tcp", "-j", "NFQUEUE", "--queue-num", "0")
+	// err = exec.Command(path, cmd...).Run()
+	// handleError("[ERROR] Could not add iptables rules", err, true)
+	// fmt.Printf("[DEBUG] Added iptable rules to bypass kernel network stack\n")
 
 	/* Start netfilter to capture incoming packets*/
 	nfq, err = netfilter.NewNFQueue(0, 100, netfilter.NF_DEFAULT_PACKET_SIZE)
