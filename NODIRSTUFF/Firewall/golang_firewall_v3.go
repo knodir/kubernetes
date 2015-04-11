@@ -128,11 +128,19 @@ func main() {
 	var nfq *netfilter.NFQueue      //Netfilter queue
 	var err error
 	const THRESHOLD int = 100 // indicates number of messages per second
+	// timer to control the rate of the firewall etcd counter update
+	etcdUpdateRate := 130 * time.Millisecond // 1.3 seconds
+	// timer to limit connection rate
+	connRateLimit := time.Second
 
+	// create /firewall/aggr key in etcd 
 	registerAndPutThres(THRESHOLD)
 	
-	// ticker to clear msg counter every second
-	tickChan := time.NewTicker(time.Second).C
+	// ticker to trigger etcd update on given frequency
+	etcdChan := time.NewTicker(etcdUpdateRate).C
+
+	// ticker to clear msg counter on given frequency
+	rateLimitChan := time.NewTicker(connRateLimit).C
 
 	ip_count = make(map[string]int)
 	nat_map = make(map[int]net.IP)
@@ -166,13 +174,14 @@ func main() {
 	handleError("[ERROR] can not find iptables", err, true)
 	fmt.Printf("[DEBUG] iptables is located at: %s\n", path)
 
-	// cmd := append([]string{"-A"}, "INPUT", "-p", "tcp", "-j", "NFQUEUE", "--queue-num", "0")
-	// err = exec.Command(path, cmd...).Run()
-	// handleError("[ERROR] Could not add iptables rules", err, true)
-	// fmt.Printf("[DEBUG] Added iptable rules to bypass kernel network stack\n")
+	// block all connection to the 3333 port since this is where echo messages are sent
+	cmd := append([]string{"-A"}, "INPUT", "-p", "tcp", "--dport", "3333", "-j", "NFQUEUE", "--queue-num", "0")
+	err = exec.Command(path, cmd...).Run()
+	handleError("[ERROR] Could not add iptables rules", err, true)
+	fmt.Println("[DEBUG] Added iptable rule to block all connections to port 3333")
 
-	/* Start netfilter to capture incoming packets*/
-	nfq, err = netfilter.NewNFQueue(0, 100, netfilter.NF_DEFAULT_PACKET_SIZE)
+	// Start netfilter to capture incoming packets
+	nfq, err = netfilter.NewNFQueue(0, 10000, netfilter.NF_DEFAULT_PACKET_SIZE)
 	handleError("[ERROR] could not create new netfilter queue", err, true)
 	defer nfq.Close()
 
@@ -186,12 +195,13 @@ func main() {
 	for true {
 		select {
 
-		case <- tickChan:
+		case <- rateLimitChan:
 			for fwAddr, counterVal := range ip_count {
-				ip_count[fwAddr] = 0
+				ip_count[fwAddr] = 0 // ip_count[ipv4.SrcIP.String()] = 0
 				fmt.Printf("[INFO] cleared message counter for [%s] counter was: %d\n", fwAddr, counterVal)
 			}
-			// ip_count[ipv4.SrcIP.String()] = 0
+
+		case <- etcdChan:
 			// update operational threshold value from the etcd
 			updateOperThres()
 

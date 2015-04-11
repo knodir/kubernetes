@@ -73,7 +73,6 @@ func getContainerMemInUse(cadvisorClient *client.Client,
 		// we return -1 indicating termination of this container.
 		fmt.Printf("[INFO][%s] this container got terminated\n", shortContName)
 		return -1
-		// handleError(fmt.Sprintf("[ERROR] Could not get container [%s] info", shortContName), err, true)
 	}
 
 	// returns *ContainerSpec
@@ -90,8 +89,12 @@ func getContainerMemInUse(cadvisorClient *client.Client,
 	
 	// returns MemoryStats
 	memoryStats := stats.Memory
-	usedPercentile = 100 * int(memoryStats.WorkingSet / memorySpecs.Limit)
-	// fmt.Printf("[DEBUG] WorkingSet = %d, Usage = %d, Max = %d, Perc = %d\n", memoryStats.WorkingSet, memoryStats.Usage, memorySpecs.Limit, usedPercentile)
+	if memorySpecs.Limit != 0 {
+		usedPercentile = 100 * int(memoryStats.WorkingSet / memorySpecs.Limit)
+	} else {
+		usedPercentile = 0
+	}
+	fmt.Printf("[DEBUG][%s] WorkingSet = %d, Usage = %d, Max = %d, Perc = %d\n", shortContName, memoryStats.WorkingSet, memoryStats.Usage, memorySpecs.Limit, usedPercentile)
 	
 	return 
 }
@@ -215,7 +218,7 @@ func ramBasedScaling(cadvisorClient *client.Client, ctrlName string, fullContNam
 	shortContName := fullContName[:12]
 
 	for {
-		fmt.Printf("[INFO][%s] counter = %d\n", shortContName, counter)
+		// fmt.Printf("[INFO][%s] counter = %d\n", shortContName, counter)
 		increment = false
 		decrement = false
 		
@@ -242,14 +245,21 @@ func ramBasedScaling(cadvisorClient *client.Client, ctrlName string, fullContNam
 		// 	// do scale down
 		// }
 
+		// // trigger scale up
+		// if counter == 4 {
+		// 	increment = true
+		// }
+		// // trigger scale down
+		// if counter == 17 {
+		// 	decrement = true
+		// }
 
 		// trigger scale up
-		if counter == 4 {
+		if usedPercentile > 4 {
 			increment = true
 		}
-
 		// trigger scale down
-		if counter == 17 {
+		if usedPercentile < 0 {
 			decrement = true
 		}
 
@@ -455,7 +465,13 @@ func cleanContState(deletedConts, runningConts map[string]string) {
 		totalInstances := ret.Node.Nodes.Len() - 1 // -1 for /firewall/aggr
 		fmt.Println("[INFO] number of total instances =", totalInstances)
 
-		newThresVal := aggrThresVal / totalInstances 
+		newThresVal := aggrThresVal // compute new threshold for new pods
+
+		// if there is more than one instance, divide counter evenly
+		if (totalInstances > 1) {
+			newThresVal = aggrThresVal / totalInstances
+		}
+
 		fmt.Println("[INFO] newThresVal =", newThresVal)
 
 		for _, node := range ret.Node.Nodes {
