@@ -1,11 +1,13 @@
 package main
 
 import (
-	"bytes"
+	//"bytes"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"strconv"
+	"time"
 )
 
 const (
@@ -14,14 +16,27 @@ const (
 	CONN_TYPE = "tcp"
 )
 
+func checkErr(err error) {
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+var file *os.File
+var num_packets int
+var first_packet bool = false
+var start_time time.Time
+
 func main() {
 	// Listen for incoming connections
 	l, err := net.Listen(CONN_TYPE, ":"+CONN_PORT)
-	if err != nil {
-		fmt.Println("Error Listening:", err.Error())
-		os.Exit(1)
-	}
+	checkErr(err)
 
+	// open a file for writing latency values
+	file, err = os.Create("latency_throughput.txt")
+	checkErr(err)
+
+	// Print environment variables
 	env_var := os.Environ()
 	for i := 1; i < len(env_var); i++ {
 		fmt.Printf("%s\n", env_var[i])
@@ -29,16 +44,21 @@ func main() {
 
 	//Close listener application when application closes
 	defer l.Close()
+	defer file.Close()
 	fmt.Println("Listening on " + CONN_HOST + ":" + CONN_PORT)
+
 	for {
 		// Listen for an incoming connection
 		conn, err := l.Accept()
-		if err != nil {
-			fmt.Println("Error accepting: ", err.Error())
-			os.Exit(1)
+		if first_packet == false {
+			first_packet = true
+			start_time = time.Now()
 		}
+		checkErr(err)
+		num_packets = num_packets + 1
+		fmt.Println(num_packets)
 		//Logs an incoming message
-		fmt.Printf("Received message %s -> %s \n", conn.RemoteAddr(), conn.LocalAddr())
+		//fmt.Printf("Received message %s -> %s \n", conn.RemoteAddr(), conn.LocalAddr())
 		//Handle connections in a new goroutine
 		go handleRequest(conn)
 	}
@@ -47,17 +67,23 @@ func main() {
 func handleRequest(conn net.Conn) {
 	// Make a buffer to hold incoming data
 	buf := make([]byte, 1024)
-
 	// Read the incoming connection into the buffer
 	reqLen, err := conn.Read(buf)
-	if err != nil {
-		fmt.Println("Error reading:", err.Error())
-	}
+	checkErr(err)
+
+	var timestamp time.Time
+	err = timestamp.UnmarshalBinary(buf[0:reqLen])
+	checkErr(err)
+
+	end_time := time.Now()
+
+	file.WriteString(strconv.FormatInt(int64(end_time.Sub(timestamp)), 10) + " " + strconv.FormatFloat(float64(num_packets)*1000000000/float64(end_time.Sub(start_time)), 'f', 2, 64) + "\n")
 	// Builds the message
-	n := bytes.Index(buf, []byte{0})
-	message := "Hi, I received your message! It was " + strconv.Itoa(reqLen) + " bytes long and that's what it said: \"" + string(buf[:n-1]) + "\" ! Honestly I have no clue about what to do with your mesages, so Bye Bye\n"
+	//n := bytes.Index(buf, []byte{0})
+	//message := "Hi, I received your message! It was " + strconv.Itoa(reqLen) + " bytes long and that's what it said: \"" + string(buf[:n-1]) + "\" ! Honestly I have no clue about what to do with your mesages, so Bye Bye\n"
 	// Write the message in the connection channel
-	conn.Write([]byte(message))
+	//conn.Write([]byte(message))
+
 	// Close the connection when you are done with it
 	conn.Close()
 }
