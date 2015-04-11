@@ -205,14 +205,14 @@ func resizeRC(ctrlName string, newSize int) (finalSize int) {
 }
 
 // provision additional container when current container reaches specific RAM threshold.
-func ramBasedScaling(cadvisorClient *client.Client, ctrlName string,
-	shortContName string, fullContName string) {
+func ramBasedScaling(cadvisorClient *client.Client, ctrlName string, fullContName string) {
 	
 	// var int usedPercentile 
 	// threshold := 80
 	counter := 0
 	increment := false
 	decrement := false
+	shortContName := fullContName[:12]
 
 	for {
 		fmt.Printf("[INFO][%s] counter = %d\n", shortContName, counter)
@@ -226,7 +226,7 @@ func ramBasedScaling(cadvisorClient *client.Client, ctrlName string,
 		if usedPercentile == -1 {
 			// monitoring module return -1 percentile when container gets terminated.
 			// we need to terminate scaling mechanism as well; by exiting endless loop.
-			fmt.Printf("[INFO][%s] Stopping container since monitoring stopped.\n", shortContName)
+			fmt.Printf("[INFO][%s] Stopping container since monitoring has failed.\n", shortContName)
 			break
 		}
 
@@ -244,12 +244,12 @@ func ramBasedScaling(cadvisorClient *client.Client, ctrlName string,
 
 
 		// trigger scale up
-		if counter == 3 {
+		if counter == 4 {
 			increment = true
 		}
 
 		// trigger scale down
-		if counter == 6 {
+		if counter == 17 {
 			decrement = true
 		}
 
@@ -296,10 +296,8 @@ func netBasedScaling(cadvisorClient *client.Client, containerName string) {
 	getContainerNetInUse(cadvisorClient, containerName)
 }
 
-
-// returns name of the Docker image pod is running
-func getPodImage(podName string) (dockerImage string) {
-
+// Get container image this RC is running
+func getPodImage(ctrlName string) (podImage string) {
 	// // kubectl exposes REST API, which will return all information in JSON.
 	// // fixme: it would be more general solution if this JSON format is parsed 
 	// // to retrieve Docker image name. However, as a quick & dirty solution, 
@@ -321,16 +319,14 @@ func getPodImage(podName string) (dockerImage string) {
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()
-	if err != nil {
-		log.Fatal(err)
-	}
+	handleError("[ERROR] Could not execute command $ kubectl get pods", err, true)
 	// fmt.Printf("output is %s\n", out.String())
 
 	// go through each line and find the line which starts with the given ctrlName	
 	scanner := bufio.NewScanner(bytes.NewReader(out.Bytes()))
 	for scanner.Scan() {
 		lineText := scanner.Text()
-		if strings.HasPrefix(lineText, podName) {
+		if strings.HasPrefix(lineText, ctrlName) {
 			fields := strings.Fields(lineText)
 
 			// for index := range fields {
@@ -339,11 +335,72 @@ func getPodImage(podName string) (dockerImage string) {
 
 			// kubectl get pods returns pod information in following order
 			// POD, IP, CONTAINER(S), IMAGE(S), HOST, LABELS, STATUS
-			// we need to get field[3] to get the image pod running
-			dockerImage = fields[3]
+			// we need to get field[3] for pod image.
+			podImage = fields[3]
+		}
+	}
+	return
+}
 
-			// since pod always runs the same image, we can break the loop once we found pod
-			break
+// Get podname and to container fullname mapping, e.g., [echoservercontroller-02qp4: 9b2531...2e]
+func getPodToContMap(ctrlName, imageName string) (podnameToContMap map[string]string) {
+	podnameToContMap = make(map[string]string)
+	var pods []string // list of currently running pods with this image
+
+	// 
+	cmd := exec.Command("kubectl", "get", "pods", "--server=198.162.52.217:8080")
+	// cmd.Stdin = strings.NewReader()
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	handleError("[ERROR] Could not execute command $ kubectl get pods", err, true)
+	// fmt.Printf("output is %s\n", out.String())
+
+	// go through each line and find the line which starts with the given ctrlName to get podname
+	scanner := bufio.NewScanner(bytes.NewReader(out.Bytes()))
+	for scanner.Scan() {
+		lineText := scanner.Text()
+		if strings.HasPrefix(lineText, ctrlName) {
+			fields := strings.Fields(lineText)
+
+			// for index := range fields {
+			// 	fmt.Println(index, fields[index])
+			// }
+
+			// kubectl get pods returns pod information in following order
+			// POD, IP, CONTAINER(S), IMAGE(S), HOST, LABELS, STATUS
+			// we need to get fields[0] for podname.
+			pods = append(pods, fields[0])
+		}
+	}
+
+	// get Docker IDs corresponding to these pods.
+	cmd = exec.Command("docker", "ps", "--no-trunc")
+	// cmd.Stdin = strings.NewReader()
+	cmd.Stdout = &out
+	err = cmd.Run()
+	handleError("[ERROR] Could not execute command $ docker ps", err, true)
+	// fmt.Printf("output is %s\n", out.String())
+
+	scanner = bufio.NewScanner(bytes.NewReader(out.Bytes()))
+	for scanner.Scan() {
+		lineText := scanner.Text()
+		fields := strings.Fields(lineText)
+		// for index := range fields {
+		// 	fmt.Println(index, fields[index])
+		// }
+		// fmt.Println(fields[1], fields[len(fields)-1])
+
+		// docker ps return information of running containers in the following order
+		// CONTAINER ID, IMAGE, COMMAND, CREATED, STATUS, PORTS, NAMES
+		// fields[0] has full container ID, fields[1] has image name and last element (NAMES) 
+		// contains controller name. We identify matching pod/docker by this combination.
+		if strings.HasPrefix(fields[1], imageName) && strings.Contains(fields[len(fields)-1], ctrlName) {
+			for index := range pods {
+				if strings.Contains(fields[len(fields)-1], pods[index]) {
+					podnameToContMap[pods[index]] = fields[0]
+				}
+			}
 		}
 	}
 	return
@@ -353,31 +410,31 @@ func getPodImage(podName string) (dockerImage string) {
 // rewrites all state associated with other running containers. 
 // We clean state by simply removing /firewall/<docker-id> key from etcd. 
 // The new state of the running containers are computed from an aggregate value and 
-// assigned to each running container's etcd path /firewall/<docker-id> 
+// assigned to each running container's etcd path /firewall/<podname> 
 func cleanContState(deletedConts, runningConts map[string]string) {
 	k8sMaster := []string{"http://198.162.52.217:4001"}
 	client := etcd.NewClient(k8sMaster)
 
 	aggrThresPath := "/firewall/aggr"
 	mboxName := "/firewall/"
+	var oldThres int
 
-	for shortContName, _ := range deletedConts {
+	for podName, _ := range deletedConts {
 		// rm shared state for this container
-		statePath := mboxName + shortContName // e.g., /firewall/9b253158512e
+		statePath := mboxName + podName // e.g., /firewall/firewallcontroller-t3w5u
 		_, err := client.Delete(statePath, true)
 		if err != nil {
 			handleError(fmt.Sprintf("[ERROR] Could not clean %s from etcd", statePath), err, false)
 		} else {
 			fmt.Printf("[INFO] Successfully cleaned %s\n", statePath)
 		}
-
 	}
 
 	// check if aggregate path already exists
-	ret, err := client.Get(aggrThresPath, false, false)
+	ret, err := client.Get(aggrThresPath, false, false)	
 	if err != nil {
 		// Path does not exist.
-		fmt.Println("[WARN] aggr path does not exist")
+		handleError("[WARN] aggr path does not exist", err, false)
 
 		// // assign total aggregate value to this firewall instance.
 		// localThresPath = "/firewall/ins1"
@@ -392,72 +449,44 @@ func cleanContState(deletedConts, runningConts map[string]string) {
 		aggrThresVal, _ := strconv.Atoi(ret.Node.Value)
 		fmt.Println("[INFO] aggrThresVal =", aggrThresVal)
 
-		// ret, err = client.Get("/firewall", false, true)
-		// handleError("[ERROR] Could not read value from the etcd", err, true)
+		ret, err = client.Get("/firewall", false, true)
+		handleError("[ERROR] Could not read value from the etcd", err, true)
 
-		// totalInstances := ret.Node.Nodes.Len() - 1 // -1 for /firewall/aggr
-		// fmt.Println("[INFO] number of total instances =", totalInstances)
+		totalInstances := ret.Node.Nodes.Len() - 1 // -1 for /firewall/aggr
+		fmt.Println("[INFO] number of total instances =", totalInstances)
 
-		// newThresVal := aggrThresVal / (totalInstances + 1) // +1 for the instance being created
-		// fmt.Println("[INFO] newThresVal =", newThresVal)
+		newThresVal := aggrThresVal / totalInstances 
+		fmt.Println("[INFO] newThresVal =", newThresVal)
 
-		// for _, node := range ret.Node.Nodes {
-		// 	// assign newThresVal to all instances, except /firewall/aggr
-		// 	if node.Key != aggrThresPath {
-		// 		ret, err = client.Set(node.Key, strconv.Itoa(newThresVal), 0)
-		// 		handleError(fmt.Sprintf("[ERROR] Could not set newThresVal to %s", node.Key), err, true)
-		// 		fmt.Printf("[INFO] Successfully set newThresVal: %d to [%s]\n", newThresVal, node.Key)
-		// 	}			
-		// }
+		for _, node := range ret.Node.Nodes {
 
-		// hostname, _ := os.Hostname()
-		// // fmt.Println("[DEBUG] hostname =", hostname)
-		// // assign newThresVal to the instance being created
-		// localThresPath = "/firewall/" + hostname
-		// ret, err = client.Set(localThresPath, strconv.Itoa(newThresVal), 0)
-		// handleError(fmt.Sprintf("[ERROR] Could not set newThresVal to %s", localThresPath), err, true)
-		// fmt.Printf("[INFO] Successfully set newThresVal: %d to [%s]\n", newThresVal, localThresPath)
+			// get old threshold value to debugging
+			statePath := node.Key
+			retVal, err := client.Get(statePath, false, false)
+			
+			if err != nil {
+				handleError(fmt.Sprintf("[WARN] Could not read old threshold value for [%s]", statePath), err, false)	
+			} else {
+				oldThres, _ = strconv.Atoi(retVal.Node.Value)
+				// fmt.Println("[INFO] oldThres =", oldThres)
+			}
+
+			// assign newThresVal to all instances, except /firewall/aggr
+			if node.Key != aggrThresPath {
+				_, err = client.Set(node.Key, strconv.Itoa(newThresVal), 0)
+				handleError(fmt.Sprintf("[ERROR] Could not set newThresVal to %s", node.Key), err, true)
+				fmt.Printf("[INFO] Successfully changed old threshold %d to newThresVal %d for [%s]\n", oldThres, newThresVal, node.Key)
+			}
+		}
 	}	
 	
-}
-
-// get short and full ID of the containers running this image
-func getContIDs(imageName string) (contIDs map[string]string) {
-	contIDs = make(map[string]string)
-	cmd := exec.Command("docker", "ps", "--no-trunc")
-	// cmd.Stdin = strings.NewReader()
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	err := cmd.Run()
-	if err != nil {
-		log.Fatal(err)
-	}
-	// fmt.Printf("output is %s\n", out.String())
-
-	// go through each line and find the line which has given imageName
-	scanner := bufio.NewScanner(bytes.NewReader(out.Bytes()))
-	for scanner.Scan() {
-		lineText := scanner.Text()
-		// docker ps return information of running containers in the following order
-		// CONTAINER ID, IMAGE, COMMAND, CREATED, STATUS, PORTS, NAMES
-		// we get field[1] to check if this is the image we want. 
-		// If so, field[0] is a container ID. We assign first 12 bytes of a container
-		// as a short ID, and leave entire length for a full ID.
-		fields := strings.Fields(lineText)
-		dockerImage := fields[1]
-		if strings.HasPrefix(dockerImage, imageName) {
-			// fmt.Println(fields[0][0:12], fields[0])
-			contIDs[fields[0][0:12]] = fields[0]
-		}
-	}
-	return
 }
 
 func main() {
 
 	// maps Docker short ID (12 bytes) to full ID (64 bytes)
-	var prevContIDs map[string]string
-	var currContIDs map[string]string
+	var prevPodToContMap map[string]string
+	var currPodToContMap map[string]string
 	var prevSize, currSize int
 
 
@@ -473,32 +502,18 @@ func main() {
 	cadvisorClient, err := client.NewClient("http://localhost:9090/")
 	handleError("[ERROR] Could not create NewClient", err, true)
 
-	// Max number of stats to return.
-	numStats := 1
-	request := info.ContainerInfoRequest{NumStats: numStats}
+	podImage := getPodImage(*controllerName)
+	fmt.Println("[INFO] podImage =", podImage)
 
+	prevPodToContMap = getPodToContMap(*controllerName, podImage)
+	fmt.Println("[INFO] prevPodToContMap =", prevPodToContMap)
 
-	// get name of the image pod is running
-	dockerImage := getPodImage(*controllerName)
-	fmt.Println("dockerImage =", dockerImage)		
-
-	// get container ID running this image
-	prevContIDs = getContIDs(dockerImage)
-	fmt.Println("prevContIDs =", prevContIDs)
-
-	// run monitoring mechanism for all newly created container
-	for shortContName, fullContName := range prevContIDs {
-		// returns ContainerInfo struct
-		cInfo, err := cadvisorClient.DockerContainer(fullContName, &request)
-		handleError("[ERROR] Could not get container info", err, true)
-		fmt.Println("\ncInfo =", cInfo)
-
-		// fmt.Printf("Name = %s, Aliases = %s, Namespace = %s", cInfo.Name, cInfo.Aliases, cInfo.Namespace)
-
+	// run monitoring mechanism for already running containers
+	for _, contName := range prevPodToContMap {
 		// run each Docker monitoring in a separate goroutine
-		go ramBasedScaling(cadvisorClient, *controllerName, shortContName, fullContName)
-		// cpuBasedScaling(cadvisorClient, fullContName)
-		// netBasedScaling(cadvisorClient, fullContName)				
+		go ramBasedScaling(cadvisorClient, *controllerName, contName)
+		// cpuBasedScaling(cadvisorClient, contName)
+		// netBasedScaling(cadvisorClient, contName)				
 	}
 
 	// continuously check Docker instances of this pod (i.e., running this image)
@@ -508,33 +523,31 @@ func main() {
 		newContainers := make(map[string]string)
 		deletedContainers := make(map[string]string)
 
-		// get currently running container ID with this image
-		currContIDs = getContIDs(dockerImage)
-		fmt.Println("[DEBUG] currContIDs =", currContIDs)
+		currPodToContMap = getPodToContMap(*controllerName, podImage)
 
-		// If number of previous and currently running containers does not match that means
-		// number of pod was resized. We need to find whether it was increased 
+		// If number of previously and currently running containers does not match that means
+		// pod replicas was resized. We need to find whether it was increased 
 		// or decreased, and which pod exactly got created or deleted. If they do match, 
 		// we check if both sets have same items.
-		prevSize = len(prevContIDs)
-		currSize = len(currContIDs)
+		prevSize = len(prevPodToContMap)
+		currSize = len(currPodToContMap)
 		if currSize != prevSize {
 			fmt.Printf("[INFO] Pod was resized from [%d] to [%d]\n", prevSize, currSize)
 			if (currSize > prevSize) {
 				// Pod size was increased. Go over the current list of containers and 
 				// find which pod(s) are added.				
-				for key, val := range currContIDs {
-					if prevContIDs[key] == "" {
-						newContainers[key] = val
+				for podName, contName := range currPodToContMap {
+					if prevPodToContMap[podName] == "" {
+						newContainers[podName] = contName
 					}
 				}
 				fmt.Println("[DEBUG] newContainers =", newContainers)
 			} else {
 				// Pod size was decreased. Go over the previous list of containers and 
 				// find which pod(s) were deleted.
-				for key, val := range prevContIDs {
-					if currContIDs[key] == "" {
-						deletedContainers[key] = val
+				for podName, contName := range prevPodToContMap {
+					if currPodToContMap[podName] == "" {
+						deletedContainers[podName] = contName
 					}
 				}
 				fmt.Println("[DEBUG] deletedContainers =", deletedContainers)
@@ -546,20 +559,20 @@ func main() {
 			// In such case, monitoring module should go over each container's state in etcd,
 			// remove stale values and update other ones accordingly.
 
-			fmt.Println("numbers are the same")
+			// fmt.Println("numbers are the same")
 		}
-		prevContIDs = currContIDs
+		prevPodToContMap = currPodToContMap
 
 		if len(newContainers) != 0 {
 			// run monitoring mechanism for all newly created container
-			for shortContName, fullContName := range newContainers {
-				go ramBasedScaling(cadvisorClient, *controllerName, shortContName, fullContName)
+			for _, contName := range newContainers {
+				go ramBasedScaling(cadvisorClient, *controllerName, contName)
 			}
 		}
 
 		if len(deletedContainers) != 0 {
 			// clean state of the deleted container and fix for all other running containers
-			cleanContState(deletedContainers, currContIDs)
+			cleanContState(deletedContainers, currPodToContMap)
 		}
 
 	}
