@@ -33,6 +33,8 @@ func main() {
 	fmt.Printf("ADDRESS OF SERVICE IS: %s\n", servAddr)
 	tcpAddr, err := net.ResolveTCPAddr("tcp", servAddr)
 	checkErr(err)
+	conn, err := net.DialTCP("tcp", nil, tcpAddr)
+	checkErr(err)
 
 	freqInMicrosec, _ := strconv.Atoi(os.Args[2])
 	numPackets, _ := strconv.Atoi(os.Args[3])
@@ -40,7 +42,6 @@ func main() {
 	start_time := time.Now()
 	for i := 0; i < numPackets; i++ {
 		<-time.After(time.Microsecond * time.Duration(freqInMicrosec))
-		conn, err := net.DialTCP("tcp", nil, tcpAddr)
 		checkErr(err)
 
 		timestamp, err := time.Now().MarshalBinary()
@@ -61,9 +62,12 @@ func main() {
 
 		fmt.Printf("reply from server=%s\n", string(reply))
 		*/
-		conn.Close()
 		fmt.Println(i)
 	}
 	end_time := time.Now()
 	fmt.Printf("Average Throughput is %f packets/second\n", float64(numPackets)*1000000000/float64(end_time.Sub(start_time)))
+	defer conn.Close()
+	for true {
+		<-time.After(time.Second)
+	}
 }

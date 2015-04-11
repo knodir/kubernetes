@@ -50,13 +50,9 @@ func main() {
 	for {
 		// Listen for an incoming connection
 		conn, err := l.Accept()
-		if first_packet == false {
-			first_packet = true
-			start_time = time.Now()
-		}
 		checkErr(err)
-		num_packets = num_packets + 1
-		fmt.Println(num_packets)
+		num_packets = 0
+		first_packet = false
 		//Logs an incoming message
 		//fmt.Printf("Received message %s -> %s \n", conn.RemoteAddr(), conn.LocalAddr())
 		//Handle connections in a new goroutine
@@ -66,24 +62,36 @@ func main() {
 
 func handleRequest(conn net.Conn) {
 	// Make a buffer to hold incoming data
-	buf := make([]byte, 1024)
-	// Read the incoming connection into the buffer
-	reqLen, err := conn.Read(buf)
-	checkErr(err)
+	var buf [1600]byte
+	for true {
+		if first_packet == false {
+			first_packet = true
+			start_time = time.Now()
+		}
+		num_packets = num_packets + 1
+		fmt.Println(num_packets)
 
-	var timestamp time.Time
-	err = timestamp.UnmarshalBinary(buf[0:reqLen])
-	checkErr(err)
+		// Read the incoming connection into the buffer
+		reqLen, err := conn.Read(buf[0:])
+		if err != nil {
+			break
+		}
+		var timestamp time.Time
+		err = (&timestamp).UnmarshalBinary(buf[0:reqLen])
+		if err == nil {
+			end_time := time.Now()
 
-	end_time := time.Now()
+			_, err = file.WriteString(strconv.FormatInt(end_time.UnixNano(), 10) + " " + strconv.FormatInt(timestamp.UnixNano(), 10) + " " + strconv.FormatInt(int64(end_time.Sub(timestamp)), 10) + " " + strconv.FormatFloat(float64(num_packets)*1000000000/float64(end_time.Sub(start_time)), 'f', 2, 64) + "\n")
+			checkErr(err)
+			// Builds the message
+			//n := bytes.Index(buf, []byte{0})
+			//message := "Hi, I received your message! It was " + strconv.Itoa(reqLen) + " bytes long and that's what it said: \"" + string(buf[:n-1]) + "\" ! Honestly I have no clue about what to do with your mesages, so Bye Bye\n"
+			// Write the message in the connection channel
+			//conn.Write([]byte(message))
 
-	file.WriteString(strconv.FormatInt(int64(end_time.Sub(timestamp)), 10) + " " + strconv.FormatFloat(float64(num_packets)*1000000000/float64(end_time.Sub(start_time)), 'f', 2, 64) + "\n")
-	// Builds the message
-	//n := bytes.Index(buf, []byte{0})
-	//message := "Hi, I received your message! It was " + strconv.Itoa(reqLen) + " bytes long and that's what it said: \"" + string(buf[:n-1]) + "\" ! Honestly I have no clue about what to do with your mesages, so Bye Bye\n"
-	// Write the message in the connection channel
-	//conn.Write([]byte(message))
-
-	// Close the connection when you are done with it
+			// Close the connection when you are done with it
+		}
+	}
+	fmt.Printf("closing conn...\n")
 	conn.Close()
 }
