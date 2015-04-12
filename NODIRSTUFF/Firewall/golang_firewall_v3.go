@@ -129,7 +129,7 @@ func main() {
 	var err error
 	const THRESHOLD int = 100 // indicates number of messages per second
 	// timer to control the rate of the firewall etcd counter update
-	etcdUpdateRate := 130 * time.Millisecond // 1.3 seconds
+	etcdUpdateRate := 1000 * time.Millisecond // 1.3 seconds
 	// timer to limit connection rate
 	connRateLimit := time.Second
 
