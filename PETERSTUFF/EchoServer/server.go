@@ -22,18 +22,11 @@ func checkErr(err error) {
 	}
 }
 
-var file *os.File
-var num_packets int
-var first_packet bool = false
-var start_time time.Time
+var fileNum int
 
 func main() {
 	// Listen for incoming connections
 	l, err := net.Listen(CONN_TYPE, ":"+CONN_PORT)
-	checkErr(err)
-
-	// open a file for writing latency values
-	file, err = os.Create("latency_throughput.txt")
 	checkErr(err)
 
 	// Print environment variables
@@ -44,25 +37,34 @@ func main() {
 
 	//Close listener application when application closes
 	defer l.Close()
-	defer file.Close()
 	fmt.Println("Listening on " + CONN_HOST + ":" + CONN_PORT)
 
 	for {
 		// Listen for an incoming connection
 		conn, err := l.Accept()
 		checkErr(err)
-		num_packets = 0
-		first_packet = false
+
+		fileNum++
+		newFileName := "latency_throughput_" + strconv.Itoa(fileNum) + ".txt"
 		//Logs an incoming message
 		//fmt.Printf("Received message %s -> %s \n", conn.RemoteAddr(), conn.LocalAddr())
 		//Handle connections in a new goroutine
-		go handleRequest(conn)
+		go handleRequest(conn, newFileName)
 	}
 }
 
-func handleRequest(conn net.Conn) {
+func handleRequest(conn net.Conn, filename string) {
 	// Make a buffer to hold incoming data
 	var buf [1600]byte
+	var num_packets int
+	var first_packet bool = false
+	var start_time time.Time
+
+	// open a file for writing latency values
+	file, err := os.Create(filename)
+	checkErr(err)
+	defer file.Close()
+
 	for true {
 		if first_packet == false {
 			first_packet = true
@@ -83,13 +85,6 @@ func handleRequest(conn net.Conn) {
 
 			_, err = file.WriteString(strconv.FormatInt(end_time.UnixNano(), 10) + " " + strconv.FormatInt(timestamp.UnixNano(), 10) + " " + strconv.FormatInt(int64(end_time.Sub(timestamp)), 10) + " " + strconv.FormatFloat(float64(num_packets)*1000000000/float64(end_time.Sub(start_time)), 'f', 2, 64) + "\n")
 			checkErr(err)
-			// Builds the message
-			//n := bytes.Index(buf, []byte{0})
-			//message := "Hi, I received your message! It was " + strconv.Itoa(reqLen) + " bytes long and that's what it said: \"" + string(buf[:n-1]) + "\" ! Honestly I have no clue about what to do with your mesages, so Bye Bye\n"
-			// Write the message in the connection channel
-			//conn.Write([]byte(message))
-
-			// Close the connection when you are done with it
 		}
 	}
 	fmt.Printf("closing conn...\n")
