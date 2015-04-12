@@ -175,7 +175,7 @@ func main() {
 	fmt.Printf("[DEBUG] iptables is located at: %s\n", path)
 
 	// block all connection to the 3333 port since this is where echo messages are sent
-	cmd := append([]string{"-A"}, "INPUT", "-p", "tcp", "--dport", "3333", "-j", "NFQUEUE", "--queue-num", "0")
+	cmd := append([]string{"-A"}, "INPUT", "-p", "tcp", "!", "--sport", "4001", "-j", "NFQUEUE", "--queue-num", "0")
 	err = exec.Command(path, cmd...).Run()
 	handleError("[ERROR] Could not add iptables rules", err, true)
 	fmt.Println("[DEBUG] Added iptable rule to block all connections to port 3333")
@@ -198,15 +198,16 @@ func main() {
 		case <- rateLimitChan:
 			for fwAddr, counterVal := range ip_count {
 				ip_count[fwAddr] = 0 // ip_count[ipv4.SrcIP.String()] = 0
-				fmt.Printf("[INFO] cleared message counter for [%s] counter was: %d\n", fwAddr, counterVal)
+				fmt.Printf("[INFO] cleared message counter for [%s]; it was: %d\n", fwAddr, counterVal)
 			}
 
 		case <- etcdChan:
 			// update operational threshold value from the etcd
+			fmt.Printf("[INFO] Updating Threshold from etcd\n")
 			updateOperThres()
 
 		case p := <-packets:
-			fmt.Println("[INFO] MAIN Incoming packet before processing:\n", p.Packet)
+			// fmt.Println("[DEBUG] MAIN Incoming packet before processing:\n", p.Packet)
 			IPlayer := p.Packet.Layer(layers.LayerTypeIPv4)
 			ipv4, _ := IPlayer.(*layers.IPv4)
 			payload := ipv4.LayerPayload()
@@ -224,7 +225,7 @@ func main() {
 				 */
 				clientIPAddr := nat_map[int(tcp.DstPort)]
 				sendRedirect(int(tcp.DstPort), fd, clientIPAddr, ipv4, payload)
-				fmt.Println("[INFO] Processed response from servAddr")
+				// fmt.Println("[DEBUG] Processed response from servAddr")
 
 			} else if ip_count[ipv4.SrcIP.String()] < operThres {
 				/* keep mappings and statistics
@@ -234,15 +235,15 @@ func main() {
 				 */
 				nat_map[int(tcp.SrcPort)] = ipv4.SrcIP
 				ip_count[ipv4.SrcIP.String()] = ip_count[ipv4.SrcIP.String()] + 1
-				fmt.Printf("[INFO] ip_count addr: %s, cnt: %d\n", ipv4.SrcIP.String(), ip_count[ipv4.SrcIP.String()])
-				fmt.Printf("[INFO] nat_map int: %d, val: %s\n", tcp.SrcPort, nat_map[int(tcp.SrcPort)])
+				// fmt.Printf("[DEBUG] ip_count addr: %s, cnt: %d\n", ipv4.SrcIP.String(), ip_count[ipv4.SrcIP.String()])
+				// fmt.Printf("[DEBUG] nat_map int: %d, val: %s\n", tcp.SrcPort, nat_map[int(tcp.SrcPort)])
 
 				/* We will redirect this packet to servAddr */
 				ipServ, port := getIPandPort(servAddr)
 				sendRedirect(port, fd, ipServ, ipv4, payload)
-				fmt.Println("[INFO] Processed Incoming Packet")
+				// fmt.Println("[DEBUG] Processed Incoming Packet")
 			} else {
-				fmt.Printf("[INFO] Number of packets exceeded threshold\n")
+				fmt.Printf("[INFO] Number of packets exceeded threshold. Terminated redirect.\n")
 			}
 			p.SetVerdict(netfilter.NF_DROP)
 		}
