@@ -1,9 +1,9 @@
-FROM quantumlight/ubuntu-pcap-netfilter-ssh-iptable:latest
+FROM quantumlight/ubuntu-pcap-netfilter-ssh-iptable:latest 
 
-MAINTAINER Peter Chen, Nodir Kodirov
- 
-ADD golang_firewall_v3 /var/golang_firewall/golang_firewall_v3
+MAINTAINER Peter Chen
+
+ADD golang_firewall_consistent /var/golang_firewall/golang_firewall_consistent
 
 EXPOSE 3333
 
-CMD ["./var/golang_firewall/golang_firewall_v3"]
+CMD ["./var/golang_firewall/golang_firewall_consistent"]

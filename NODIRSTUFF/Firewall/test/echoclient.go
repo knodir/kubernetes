@@ -1,5 +1,3 @@
-// Code adopted from PETERSTUFF/Firewall/test
-
 package main
 
 import (
@@ -7,20 +5,9 @@ import (
 	"net"
 	"os"
 	"time"
-	"strconv"
 )
 
-func usage() {
-	fmt.Printf("run as -> ./echoclient 198.162.52.217:3333 100 <- to send message every 100 microseconds.\n")
-}
-
 func main() {
-
-	if len(os.Args) != 3 {
-		usage()
-		os.Exit(1)
-	}
-
 	strEcho := "Hello"
 	servAddr := os.Args[1]
 	fmt.Printf("ADDRESS OF SERVICE IS: %s\n", servAddr)
@@ -29,12 +16,9 @@ func main() {
 		fmt.Printf("ResolveTCPAddr failed\n")
 		os.Exit(1)
 	}
-
-	freqInMicrosec, _ := strconv.Atoi(os.Args[2])
-
 	fmt.Printf("Resolved TCP Addr\n")
 	for true {
-		<-time.After(time.Microsecond * time.Duration(freqInMicrosec))
+		<-time.After(time.Second * 1)
 		conn, err := net.DialTCP("tcp", nil, tcpAddr)
 		if err != nil {
 			fmt.Printf("Dial failed\n")
