@@ -225,7 +225,7 @@ func main() {
 				 */
 				clientIPAddr := nat_map[int(tcp.DstPort)]
 				sendRedirect(int(tcp.DstPort), fd, clientIPAddr, ipv4, payload)
-				// fmt.Println("[DEBUG] Processed response from servAddr")
+				fmt.Println("[DEBUG] Processed response from servAddr")
 
 			} else if ip_count[ipv4.SrcIP.String()] < operThres {
 				/* keep mappings and statistics
@@ -241,7 +241,7 @@ func main() {
 				/* We will redirect this packet to servAddr */
 				ipServ, port := getIPandPort(servAddr)
 				sendRedirect(port, fd, ipServ, ipv4, payload)
-				// fmt.Println("[DEBUG] Processed Incoming Packet")
+				fmt.Println("[DEBUG] Processed Incoming Packet")
 			} else {
 				fmt.Printf("[INFO] Number of packets exceeded threshold. Terminated redirect.\n")
 			}
@@ -303,10 +303,10 @@ func getIPandPort(addr string) (servIP net.IP, port int) {
 // compute the checksum
 func csum(b []byte) uint16 {
 	var s uint32
-	fmt.Printf("% X\n", b)
+	// fmt.Printf("% X\n", b)
 	for i := 0; i < len(b); i += 2 {
 		s += uint32(b[i+1])<<8 | uint32(b[i])
-		fmt.Println(s)
+		// fmt.Println(s)
 	}
 	// add back the carry
 	s = s>>16 + s&0xffff

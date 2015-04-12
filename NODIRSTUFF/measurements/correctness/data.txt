@@ -1,0 +1,20 @@
+# Firewall functionality verification
+
+# number of firewall instances, actual throughput client is required to send, throughput on the client side, throughput on the server side
+1 25 24.388621 24.38
+1 50 48.223675 48.19
+1 100 94.121941 94.07
+1 150 135.159571 93.44
+1 200 174.848470 98.99
+
+2 25 24.445502 24.39
+2 50 47.797253 47.76
+2 100 90.777961 
+2 150 
+2 200 
+
+4 25 
+4 50 
+4 100 93.447485 23.97
+4 150 
+4 200 
