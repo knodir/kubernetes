@@ -167,7 +167,7 @@ func getContainerMemInUse(cadvisorClient *client.Client,
 
 
 // provision additional container when current container reaches specific RAM threshold.
-func ramBasedScaling(cadvisorClient *client.Client, ctrlName string, fullContName string) {
+func ramBasedScaling(cadvisorClient *client.Client, ctrlName, fullContName, fileName string) {
 	
 	// var int usedPercentile 
 	// threshold := 80
@@ -175,9 +175,18 @@ func ramBasedScaling(cadvisorClient *client.Client, ctrlName string, fullContNam
 	increment := false
 	decrement := false
 	shortContName := fullContName[:12]
-	// we scale each contrainer only once as proof-of-concept monitoring module
-	// fixme: this flag should not be used; provide continuous scale up/down
+	// We scale up each contrainer to show functional proof-of-concept monitoring module.
+	// fixme: this flag should not be used in real deployment. 
+	// Since current k8s pod implementation does not support RAM use decrement, 
+	// we need to use this flag to circumvent continuous container creation.
+	// In real life this flag prevents continuous scale up/down, so don't use it.
 	var scaled bool = false 
+
+	// open a file for writing latency values
+	logFile, err := os.Create(fileName)
+	handleError(fmt.Sprintf("[WARN][%s] Could not create log file", shortContName), err, false)
+	fmt.Printf("[INFO][%s] Started to log usage at %s\n", shortContName, fileName)
+	defer logFile.Close()
 
 	for {
 		// fmt.Printf("[INFO][%s] counter = %d\n", shortContName, counter)
@@ -187,6 +196,12 @@ func ramBasedScaling(cadvisorClient *client.Client, ctrlName string, fullContNam
 		// gets percentage utilization of the container
 		usedPercentile := getContainerMemInUse(cadvisorClient, shortContName, fullContName)
 		// fmt.Printf("[DEBUG][%s] usedPercentile = %d", shortContName, usedPercentile)
+
+		// log current usage in the file
+		_, err = logFile.WriteString(shortContName + " " +
+			strconv.FormatInt(time.Now().UnixNano(), 10) + " " +
+			strconv.Itoa(usedPercentile) + " \n")
+		handleError(fmt.Sprintf("[WARN][%s] Could write use to the log file", shortContName), err, false)
 
 		if usedPercentile == -1 {
 			// monitoring module return -1 percentile when container gets terminated.
@@ -236,7 +251,6 @@ func ramBasedScaling(cadvisorClient *client.Client, ctrlName string, fullContNam
 				fmt.Printf("[INFO][%s] Cannot decrement size is already lowest: %d\n", shortContName, currReplicas)
 			}
 		}
-
 		time.Sleep(READ_FREQ)
 		counter++
 	}
@@ -488,8 +502,7 @@ func cleanContState(deletedConts, runningConts map[string]string) {
 				fmt.Printf("[INFO] Successfully changed old threshold %d to newThresVal %d for [%s]\n", oldThres, newThresVal, node.Key)
 			}
 		}
-	}	
-	
+	}
 }
 
 func main() {
@@ -498,7 +511,8 @@ func main() {
 	var prevPodToContMap map[string]string
 	var currPodToContMap map[string]string
 	var prevSize, currSize int
-
+	fileNameInc := 0
+	var fileName string
 
 	controllerName := flag.String("controller", "None", "specify the name of the controller to monitor")
 	flag.Parse()
@@ -521,7 +535,10 @@ func main() {
 	// run monitoring mechanism for already running containers
 	for _, contName := range prevPodToContMap {
 		// run each Docker monitoring in a separate goroutine
-		go ramBasedScaling(cadvisorClient, *controllerName, contName)
+		fileNameInc++
+		fileName = "load_" + strconv.Itoa(fileNameInc) + ".txt"
+		go ramBasedScaling(cadvisorClient, *controllerName, contName, fileName)
+		// go ramBasedScaling(cadvisorClient, *controllerName, contName)
 		// go netBasedScaling(cadvisorClient, *controllerName, contName)
 		// cpuBasedScaling(cadvisorClient, contName)
 		
@@ -577,7 +594,9 @@ func main() {
 		if len(newContainers) != 0 {
 			// run monitoring mechanism for all newly created container
 			for _, contName := range newContainers {
-				go ramBasedScaling(cadvisorClient, *controllerName, contName)
+				fileNameInc++
+				fileName = "load_" + strconv.Itoa(fileNameInc) + ".txt"
+				go ramBasedScaling(cadvisorClient, *controllerName, contName, fileName)
 			}
 		}
 
