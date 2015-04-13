@@ -3,7 +3,7 @@
   "kind": "ReplicationController",
   "apiVersion": "v1beta1",
   "desiredState": {
-	"replicas": 4,
+	"replicas": 1,
 	"replicaSelector": {"name": "firewallcontroller"},
 	"podTemplate": {
 		"desiredState": {
@@ -14,6 +14,8 @@
 					"name": "firewallcontroller",
 					"image": "knodir/firewall",
 					"privileged": true, 
+					"cpu": 100,
+			        "memory": 70000000
 				}]
 			}
 		},

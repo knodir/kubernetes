@@ -59,88 +59,6 @@ func getContainerCpuInUse(cadvisorClient *client.Client, containerName string) {
 	}
 }
 
-// Returns percentage of the memory being used. Returns -1 if container is terminated.
-func getContainerMemInUse(cadvisorClient *client.Client, 
-	shortContName string, fullContName string) (usedPercentile int)  {
-	// Max number of stats to return.
-	numStats := 1
-	request := info.ContainerInfoRequest{NumStats: numStats}
-
-	// returns ContainerInfo struct
-	cInfo, err := cadvisorClient.DockerContainer(fullContName, &request)
-	if err != nil {
-		// this means container was deleted (probably by replication controller).
-		// we return -1 indicating termination of this container.
-		fmt.Printf("[INFO][%s] this container got terminated\n", shortContName)
-		return -1
-	}
-
-	// returns *ContainerSpec
-	spec := cInfo.Spec
-
-	// returns *ContainerStats
-	stats := cInfo.Stats[0]
-
-	// returns *MemorySpec
-	memorySpecs := spec.Memory
-	// fmt.Println("\nLimit =", memorySpecs.Limit)
-	// fmt.Println("Reservation =", memorySpecs.Reservation)
-	// fmt.Println("SwapLimit =", memorySpecs.SwapLimit)
-	
-	// returns MemoryStats
-	memoryStats := stats.Memory
-	if memorySpecs.Limit != 0 {
-		usedPercentile = 100 * int(memoryStats.WorkingSet / memorySpecs.Limit)
-	} else {
-		usedPercentile = 0
-	}
-	fmt.Printf("[DEBUG][%s] WorkingSet = %d, Usage = %d, Max = %d, Perc = %d\n", shortContName, memoryStats.WorkingSet, memoryStats.Usage, memorySpecs.Limit, usedPercentile)
-	
-	return 
-}
-
-// get container's network stats
-func getContainerNetInUse(cadvisorClient *client.Client, containerName string) {
-	// Max number of stats to return.
-	numStats := 1
-	request := info.ContainerInfoRequest{NumStats: numStats}
-
-	for {
-		// returns ContainerInfo struct
-		cInfo, err := cadvisorClient.DockerContainer(containerName, &request)
-		handleError("Could not get container info", err, true)
-
-		// returns *ContainerStats
-		stats := cInfo.Stats[0]
-
-		// returns *NetworkStats
-		networkStats := stats.Network
-		fmt.Println("networkStats =", networkStats)
-	
-		time.Sleep(READ_FREQ)
-	}
-
-	// NetworkStats are:
-	// type NetworkStats struct {
-	// 	// Cumulative count of bytes received.
-	// 	RxBytes uint64 `json:"rx_bytes"`
-	// 	// Cumulative count of packets received.
-	// 	RxPackets uint64 `json:"rx_packets"`
-	// 	// Cumulative count of receive errors encountered.
-	// 	RxErrors uint64 `json:"rx_errors"`
-	// 	// Cumulative count of packets dropped while receiving.
-	// 	RxDropped uint64 `json:"rx_dropped"`
-	// 	// Cumulative count of bytes transmitted.
-	// 	TxBytes uint64 `json:"tx_bytes"`
-	// 	// Cumulative count of packets transmitted.
-	// 	TxPackets uint64 `json:"tx_packets"`
-	// 	// Cumulative count of transmit errors encountered.
-	// 	TxErrors uint64 `json:"tx_errors"`
-	// 	// Cumulative count of packets dropped while transmitting.
-	// 	TxDropped uint64 `json:"tx_dropped"`
-	// }
-}
-
 // get current number of replicas of the given replicationcontroller 
 func getCurrentReplica(ctrlName string) (replicas int) {
 	// kubectl get rc --server=198.162.52.217:8080
@@ -207,6 +125,47 @@ func resizeRC(ctrlName string, newSize int) (finalSize int) {
 	return
 }
 
+// Returns percentage of the memory being used. Returns -1 if container is terminated.
+func getContainerMemInUse(cadvisorClient *client.Client, 
+	shortContName string, fullContName string) (usedPercentile int)  {
+	// Max number of stats to return.
+	numStats := 1
+	request := info.ContainerInfoRequest{NumStats: numStats}
+
+	// returns ContainerInfo struct
+	cInfo, err := cadvisorClient.DockerContainer(fullContName, &request)
+	if err != nil {
+		// this means container was deleted (probably by replication controller).
+		// we return -1 indicating termination of this container.
+		fmt.Printf("[INFO][%s] this container got terminated\n", shortContName)
+		return -1
+	}
+
+	// returns *ContainerSpec
+	spec := cInfo.Spec
+
+	// returns *ContainerStats
+	stats := cInfo.Stats[0]
+
+	// returns *MemorySpec
+	memorySpecs := spec.Memory
+	// fmt.Println("\nLimit =", memorySpecs.Limit)
+	// fmt.Println("Reservation =", memorySpecs.Reservation)
+	// fmt.Println("SwapLimit =", memorySpecs.SwapLimit)
+	
+	// returns MemoryStats
+	memoryStats := stats.Memory
+	if memorySpecs.Limit != 0 {
+		usedPercentile = int(100* memoryStats.WorkingSet / memorySpecs.Limit)
+	} else {
+		usedPercentile = 0
+	}
+	fmt.Printf("[DEBUG][%s] WorkingSet = %d, Usage = %d, Max = %d, Perc = %d\n", shortContName, memoryStats.WorkingSet, memoryStats.Usage, memorySpecs.Limit, usedPercentile)
+	
+	return 
+}
+
+
 // provision additional container when current container reaches specific RAM threshold.
 func ramBasedScaling(cadvisorClient *client.Client, ctrlName string, fullContName string) {
 	
@@ -216,6 +175,9 @@ func ramBasedScaling(cadvisorClient *client.Client, ctrlName string, fullContNam
 	increment := false
 	decrement := false
 	shortContName := fullContName[:12]
+	// we scale each contrainer only once as proof-of-concept monitoring module
+	// fixme: this flag should not be used; provide continuous scale up/down
+	var scaled bool = false 
 
 	for {
 		// fmt.Printf("[INFO][%s] counter = %d\n", shortContName, counter)
@@ -233,59 +195,45 @@ func ramBasedScaling(cadvisorClient *client.Client, ctrlName string, fullContNam
 			break
 		}
 
-		// Decide if container reached the predefined threshold.
-		// Since k8s does not support resource limitation yet, 
-		// we will manually trigger scaling up and scaling down. 
-		// fixme: adopt real monitoring when it k8s supports it.
-		// Refer to "Kubernetes resource monitoring" section of VMC notes for more info.
-		// if usedPercentile > threshold {
-		// 	// do scale up
-		// }
-		// if usedPercentile < threshold {
-		// 	// do scale down
-		// }
-
-		// // trigger scale up
-		// if counter == 4 {
-		// 	increment = true
-		// }
+		if !scaled {
+			// trigger scale up
+			if usedPercentile > 60 {
+				increment = true
+			}
+		}
 		// // trigger scale down
-		// if counter == 17 {
+		// if usedPercentile < 40 {
 		// 	decrement = true
 		// }
-
-		// trigger scale up
-		if usedPercentile > 4 {
-			increment = true
-		}
-		// trigger scale down
-		if usedPercentile < 0 {
-			decrement = true
-		}
 
 		if increment {
 			// increment number of containers via replicationcontroller resize command			
 			currReplicas := getCurrentReplica(ctrlName)
-			fmt.Printf("[INFO][%s] currReplicas = %d\n", shortContName, currReplicas)
+			// fmt.Printf("[INFO][%s] currReplicas = %d\n", shortContName, currReplicas)
 
 			newReplicas := currReplicas + 1
 			if newReplicas == resizeRC(ctrlName, newReplicas) {
-				fmt.Printf("[INFO][%s] resize is successful\n", shortContName)
+				fmt.Printf("[INFO][%s] successfully incremented size from %d to %d\n", shortContName, currReplicas, newReplicas)
+				scaled = true
 			} else {
-				fmt.Printf("[INFO][%s] resize is not successful\n", shortContName)
+				fmt.Printf("[INFO][%s] failed to increment size from %d to %d\n", shortContName, currReplicas, newReplicas)
 			}
 		}
 
 		if decrement {
 			// decrement number of containers by replicationcontroller resize command			
 			currReplicas := getCurrentReplica(ctrlName)
-			fmt.Printf("[INFO][%s] currReplicas = %d\n", shortContName, currReplicas)
+			// fmt.Printf("[INFO][%s] currReplicas = %d\n", shortContName, currReplicas)
 
-			newReplicas := currReplicas - 1
-			if newReplicas == resizeRC(ctrlName, newReplicas) {
-				fmt.Printf("[INFO][%s] resize is successful\n", shortContName)
+			if currReplicas > 1 {
+				newReplicas := currReplicas - 1
+				if  newReplicas == resizeRC(ctrlName, newReplicas) {
+					fmt.Printf("[INFO][%s] successfully decremented size from %d to %d\n", shortContName, currReplicas, newReplicas)
+				} else {
+					fmt.Printf("[INFO][%s] failed to decrement size from %d to %d\n", shortContName, currReplicas, newReplicas)
+				}				
 			} else {
-				fmt.Printf("[INFO][%s] resize is not successful\n", shortContName)
+				fmt.Printf("[INFO][%s] Cannot decrement size is already lowest: %d\n", shortContName, currReplicas)
 			}
 		}
 
@@ -301,9 +249,55 @@ func cpuBasedScaling(cadvisorClient *client.Client, containerName string) {
 	getContainerCpuInUse(cadvisorClient, containerName)
 }
 
+// get container's network stats
+func getContainerNetInUse(cadvisorClient *client.Client, shortContName, fullContName string) {
+	// Max number of stats to return.
+	numStats := 1
+	request := info.ContainerInfoRequest{NumStats: numStats}
+
+	// returns ContainerInfo struct
+	cInfo, err := cadvisorClient.DockerContainer(fullContName, &request)
+	handleError("[ERROR] Could not get container info", err, true)
+
+	// returns *ContainerStats
+	stats := cInfo.Stats[0]
+
+	// returns *NetworkStats
+	networkStats := stats.Network
+	fmt.Printf("[INFO][%s] networkStats.RxBytes = %d\n", shortContName, networkStats.RxBytes)
+
+	// NetworkStats are:
+	// type NetworkStats struct {
+	// 	// Cumulative count of bytes received.
+	// 	RxBytes uint64 `json:"rx_bytes"`
+	// 	// Cumulative count of packets received.
+	// 	RxPackets uint64 `json:"rx_packets"`
+	// 	// Cumulative count of receive errors encountered.
+	// 	RxErrors uint64 `json:"rx_errors"`
+	// 	// Cumulative count of packets dropped while receiving.
+	// 	RxDropped uint64 `json:"rx_dropped"`
+	// 	// Cumulative count of bytes transmitted.
+	// 	TxBytes uint64 `json:"tx_bytes"`
+	// 	// Cumulative count of packets transmitted.
+	// 	TxPackets uint64 `json:"tx_packets"`
+	// 	// Cumulative count of transmit errors encountered.
+	// 	TxErrors uint64 `json:"tx_errors"`
+	// 	// Cumulative count of packets dropped while transmitting.
+	// 	TxDropped uint64 `json:"tx_dropped"`
+	// }
+}
+
 // provision additional container when current container reaches specific network threshold.
-func netBasedScaling(cadvisorClient *client.Client, containerName string) {
-	getContainerNetInUse(cadvisorClient, containerName)
+func netBasedScaling(cadvisorClient *client.Client, ctrlName string, fullContName string) {
+
+	// This function is not implemented since k8s pod does not report Network stats
+	// Once k8s supports it, most of this function will be similar to ramBasedScaling
+	shortContName := fullContName[:12]
+
+	for {
+		getContainerNetInUse(cadvisorClient, shortContName, fullContName)
+		time.Sleep(READ_FREQ)
+	}
 }
 
 // Get container image this RC is running
@@ -528,8 +522,9 @@ func main() {
 	for _, contName := range prevPodToContMap {
 		// run each Docker monitoring in a separate goroutine
 		go ramBasedScaling(cadvisorClient, *controllerName, contName)
+		// go netBasedScaling(cadvisorClient, *controllerName, contName)
 		// cpuBasedScaling(cadvisorClient, contName)
-		// netBasedScaling(cadvisorClient, contName)				
+		
 	}
 
 	// continuously check Docker instances of this pod (i.e., running this image)
