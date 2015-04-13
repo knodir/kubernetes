@@ -1,6 +1,3 @@
-// Adopted from golang_firewall_v2. Changes are:
-// - change threshold from incremental counter to msgs per second
-
 package main
 
 import (
@@ -202,7 +199,7 @@ func main() {
 			updateOperThres()
 
 		case p := <-packets:
-			fmt.Println("[DEBUG] MAIN Incoming packet before processing")
+			// fmt.Println("[DEBUG] MAIN Incoming packet before processing")
 			// fmt.Println(p.Packet)
 			IPlayer := p.Packet.Layer(layers.LayerTypeIPv4)
 			ipv4, _ := IPlayer.(*layers.IPv4)
@@ -221,7 +218,7 @@ func main() {
 				 */
 				clientIPAddr := nat_map[int(tcp.DstPort)]
 				sendRedirect(int(tcp.DstPort), fd, clientIPAddr, ipv4, payload)
-				// fmt.Println("[DEBUG] Processed response from servAddr")
+				fmt.Println("[DEBUG] Processed response from the echoserver")
 
 			} else if ip_count[ipv4.SrcIP.String()] < operThres {
 				/* keep mappings and statistics
@@ -237,7 +234,7 @@ func main() {
 				/* We will redirect this packet to servAddr */
 				ipServ, port := getIPandPort(servAddr)
 				sendRedirect(port, fd, ipServ, ipv4, payload)
-				// fmt.Println("[DEBUG] Processed Incoming Packet")
+				fmt.Println("[DEBUG] Processed Incoming Packet from the client")
 			} else {
 				fmt.Printf("[INFO] Number of packets exceeded threshold. Terminated redirect.\n")
 			}

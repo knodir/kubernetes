@@ -1,9 +1,13 @@
 # Benchmark different versions of the Firewall
 
-# benchmark name, number of msg client is requested to send (on CLI), client reported average throughput, server reported average throughput
 # All benchmarks are collected from following client command
-
 # ./echoclient --dst=198.162.52.217:3333 --freq=1000 --total=10000 --threads=1
+# base: no etcd operation, just run firewall functionality without any rate limitation
+# poll1000: poll etcd every 1000 ms (=1s) to update the local state
+# poll100: poll etcd every 100 ms (=0.1s) to update the local state
+# consistent: update the local state from etcd before processing each message
+
+# benchmark name, number of msgs client is requested to send (on CLI), client reported average throughput, server reported average throughput
 
 base 1000 683.709601 680.22
 poll1000 1000 732.011860 106.26 

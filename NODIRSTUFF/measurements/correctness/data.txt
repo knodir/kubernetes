@@ -1,20 +1,29 @@
 # Firewall functionality verification
 
-# number of firewall instances, actual throughput client is required to send, throughput on the client side, throughput on the server side
+# All measurements are collected by running following client command
+# ./echoclient --dst=198.162.52.217:3333 --freq=<25, 50, 100, 150, 200> --total=10000 --threads=<1,2,4>
+# Note that number of firewall instances are equal to the number of the client threads.
+# Each client thread makes a separate TCP connection which will be respectively forwarded to a particular 
+# firewall instance by the k8s service. For example, when there are 4 firewall instances, 
+# we run the client with 4 threads. Due to round-robin connection assignment by the k8s service, 
+# these 4 connections will be assigned to 4 different firewall. 
+
+# number of firewall instances, number of msgs client is requested to send (on CLI), client reported throughput, echo server reported throughput
+
 1 25 24.388621 24.38
 1 50 48.223675 48.19
 1 100 94.121941 94.07
 1 150 135.159571 93.44
 1 200 174.848470 98.99
 
-2 25 24.445502 24.39
-2 50 47.797253 47.76
-2 100 90.777961 
-2 150 
-2 200 
+2 25 24.63851 24.62
+2 50 48.174689 48.16
+2 100 93.392746 93.33
+2 150 137.49171 94.34
+2 200 180.134742 98.30
 
-4 25 
-4 50 
-4 100 93.447485 23.97
-4 150 
-4 200 
+4 25 24.876637 24.76
+4 50 49.271043 49.25
+4 100 96.548974 96.53
+4 150 142.791134 96.66
+4 200 189.464895 96.98
