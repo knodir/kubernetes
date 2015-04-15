@@ -19,7 +19,7 @@ fw4time = (fw4time - first)/1000000000
 
 png('scaling.png', width = 6, height=5, units="in", res=300)
 
-plot(fw1time, fw1rampct, type="o", col="blue", xlab="time (s)", ylab="RAM Utilization %", ylim=c(52,100), xlim=c(0,152))
+plot(fw1time, fw1rampct, type="o", col="blue", xlab="Time (s)", ylab="RAM Utilization %", ylim=c(45,100), xlim=c(0,152))
 lines(fw2time, fw2rampct, type="o", col="red")
 lines(fw3time, fw3rampct, type="o", col="green")
 lines(fw4time, fw4rampct, type="o", col="black")
