@@ -1,8 +1,6 @@
 #!/bin/bash
 
 # Start etcd
-# You might have to starts etcd daemon manually first using commands in etcd_custom.service
-# somehow etcd successfully starts from the second run.
 echo -n "DISCOVERY_URL=" > ~/STARTUP_SCRIPTS/discovery_token.txt
 echo -n $(curl https://discovery.etcd.io/new?size=3) >> ~/STARTUP_SCRIPTS/discovery_token.txt
 sudo systemctl start etcd_custom.service
