@@ -8,6 +8,6 @@ Wants=docker_custom.service
 Wants=apiserver.service
 
 [Service]
-ExecStart=/opt/bin/kube-scheduler --master=198.162.52.217:8080
+ExecStart=/opt/bin/kube-scheduler --master=198.162.52.126:8080
 
 [Install]

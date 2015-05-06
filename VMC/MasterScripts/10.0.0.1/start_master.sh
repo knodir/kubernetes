@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # Start etcd
-echo -n "DISCOVERY_URL=" > ~/STARTUP_SCRIPTS/discovery_token.txt
-echo -n $(curl https://discovery.etcd.io/new?size=3) >> ~/STARTUP_SCRIPTS/discovery_token.txt
-sudo systemctl start etcd_custom.service
+#echo -n "DISCOVERY_URL=" > ~/STARTUP_SCRIPTS/discovery_token.txt
+#echo -n $(curl https://discovery.etcd.io/new?size=3) >> ~/STARTUP_SCRIPTS/discovery_token.txt
+#sudo systemctl start etcd_custom.service
 
 # Start flannel
 sudo systemctl start flannel.service
