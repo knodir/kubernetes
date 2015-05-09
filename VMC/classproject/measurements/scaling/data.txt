@@ -1,0 +1,12 @@
+# Container scaling experiment
+
+# Here is the scenario to collect this data. 
+# 1) Start one firewall with replication controller (RC)
+# 2) Generate firewall load by sending client messages 
+# 3) Monitoring module resizes RC when 60% RAM threshold is reached
+# 4) Second firewall is created and monitoring module resizes when this one reached the RAM threshold
+
+# All data is collected by running following client command
+# ./echoclient --dst=198.162.52.217:3333 --freq=1000 --total=1000000 --inc=10 --threads=4
+
+# container name, timestamp, RAM use percentage
