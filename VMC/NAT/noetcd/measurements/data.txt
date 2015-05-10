@@ -1,12 +1,5 @@
-# Benchmark different versions of the Firewall
+packet_latency_sample.txt has data in the following format:
+server_time, client_time, latency
 
-# benchmark name, number of msg client is requested to send (on CLI), client reported average throughput, server reported average throughput
-# All benchmarks are collected from following client command
-
-# ./echoclient --dst=198.162.52.217:3333 --freq=1000 --total=10000 --threads=1
-
-base 1000 683.709601 680.22
-poll1000 1000 732.011860 106.26 
-poll100 1000 718.093189 106.99
-consistent 1000 740.230740 124.62
-
+nat_map_capacity.txt has data in the following format:
+nat_time, len(nat_map)
