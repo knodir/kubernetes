@@ -10,10 +10,12 @@
 			"manifest": {
 				"version": "v1beta1",
 				"id": "echomaster",
+				"volumes":[{"name":"logs", "source":{"hostDir":{"path":"/home/core/logdata"}}}],
 				"containers": [{
 					"name": "echomaster",
 					"image": "knodir/natserver",
-					"ports": [{"containerPort": 3333}]
+					"ports": [{"containerPort": 3333}],
+					"volumeMounts": [{"name":"logs","mountPath":"/tmp","readOnly":false}]
 				}]
 			}
 		},

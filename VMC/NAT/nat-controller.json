@@ -10,11 +10,13 @@
 			"manifest": {
 				"version": "v1beta1",
 				"id": "firewallcontroller",
+				"volumes":[{"name":"logs", "source":{"hostDir":{"path":"/home/core/logdata"}}}],
 				"containers": [{
 					"name": "firewallcontroller",
 					"image": "knodir/nat",
-					"privileged": true
-				}]
+					"privileged": true,
+					"volumeMounts": [{"name":"logs","mountPath":"/tmp","readOnly":false}]
+				}],
 			}
 		},
 		"labels": {
