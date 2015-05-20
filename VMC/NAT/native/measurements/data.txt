@@ -1,5 +1,0 @@
-packet_latency_sample.txt has data in the following format:
-server_time, client_time, latency
-
-nat_map_capacity.txt has data in the following format:
-nat_time, len(nat_map)

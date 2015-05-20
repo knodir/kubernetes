@@ -19,7 +19,6 @@ import (
 )
 
 var nat_map map[int]net.IP
-var externalEtcd []string = []string{"http://10.0.0.11:4001"}
 
 // Prints error message (err) with caller provided string (msg).
 // Terminate the program if terminate=true (continue execution otherwise).
@@ -75,13 +74,12 @@ func main() {
 	handleError("[ERROR] can not find iptables", err, true)
 	fmt.Printf("[DEBUG] iptables is located at: %s\n", ipTablesPath)
 
-	// block all connection to the 3333 port since this is where echo messages are sent
-	// Fixme: do not block all connections. We need to use scp to retrieve log files, too.
-	// Also add scp to the echoservercontroller image
-	cmd := append([]string{"-A"}, "INPUT", "-p", "tcp", "!", "--sport", "4001", "-j", "NFQUEUE", "--queue-num", "0")
+	// block all connections, but 4001 which is used by etcd. We don't use etcd here, but we still need to push one rule to iptables so it blocks everything. So, just leaving this rule as it is.
+	cmd := append([]string{"-A"}, "INPUT", "-p", "tcp", "!", "--sport", "4001", "-j", "NFQUEUE", "--queue-num", "0")	
 	err = exec.Command(ipTablesPath, cmd...).Run()
 	handleError("[ERROR] Could not add iptables rules", err, true)
-	fmt.Println("[DEBUG] Added iptable rule to block all connections to port 3333")
+	fmt.Println("[DEBUG] Added iptables rule to capture all INPUT but port 22")
+
 
 	// Start netfilter to capture incoming packets
 	nfq, err = netfilter.NewNFQueue(0, 10000, netfilter.NF_DEFAULT_PACKET_SIZE)
@@ -99,14 +97,15 @@ func main() {
 	handleError("[ERROR] Could not create file to record stats", err, true)
 	defer statFile.Close()
 
-	_, err = statFile.WriteString("nat_time, len(nat_map)\n")
-	handleError("[ERROR] Could not write to stats file", err, true)
+	// _, err = statFile.WriteString("nat_time, len(nat_map)\n")
+	// handleError("[ERROR] Could not write to stats file", err, true)
 	
 	for true {
 		select {
 
 		// process each incoming packet and record number of entries in the NAT map (len(nat_map)) when each packet was received
 		case p := <-packets:
+			// file entry format (nat_time, len(nat_map))
 			_, err = statFile.WriteString(strconv.FormatInt(time.Now().UnixNano(), 10) + " " + strconv.Itoa(len(nat_map)) + "\n")
 			handleError("[ERROR] Could not write to statFile", err, true)
 			

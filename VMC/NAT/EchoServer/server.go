@@ -51,9 +51,6 @@ func main() {
 	handleError("[ERROR] Could not create stats file", err, true)
 	defer file.Close()
 
-	_, err = file.WriteString("server_time, client_time, latency\n")
-	handleError("[ERROR] Could not write to stats file", err, true)
-
 	for {
 		// Listen for an incoming connection
 		conn, err := l.Accept()
@@ -81,6 +78,7 @@ func handleRequest(conn net.Conn, fd *os.File) {
 		if err == nil {
 			end_time := time.Now()
 
+			// writing order (server_time, client_time, latency)
 			_, err = fd.WriteString(strconv.FormatInt(end_time.UnixNano(), 10) + " " + strconv.FormatInt(timestamp.UnixNano(), 10) + " " + strconv.FormatInt(int64(end_time.Sub(timestamp)), 10) + " \n")
 			handleError("[ERROR] Could not write stats to file", err, true)
 		}
