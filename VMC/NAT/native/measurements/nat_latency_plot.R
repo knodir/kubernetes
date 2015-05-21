@@ -49,42 +49,76 @@ minLength = min(length(arrFromFirstRun), length(arrFromSecondRun), length(arrFro
 #sprintf("length(arrFromSecondRun) = %f", length(arrFromSecondRun))
 #sprintf("length(arrFromThirdRun) = %f", length(arrFromThirdRun))
 
-sprintf("minLength = %f", minLength)
-
-#trimmedFirst = NULL
-#trimmedSecond = NULL
-#trimmedThird = NULL
-
-#for (i in 1:length(minLength)) trimmedFirst[i] = arrFromFirstRun[i];
-#for (i in 1:length(minLength)) trimmedSecond[i] = arrFromSecondRun[i];
-#for (i in 1:length(minLength)) trimmedThird[i] = arrFromThirdRun[i];
-
-
-# final array with the average value of the three runs. This will be plotted.
-avgArr = (arrFromFirstRun + arrFromSecondRun + arrFromThirdRun)/3
-# sprintf("%f", avgArr)
+# sprintf("minLength = %f", minLength)
 
 # select point we would like to draw on the graph
-step = 1000
+step = 100
+stepIndex = 0
+avgVal = 0
+cycles = 0
 plotPoints = minLength / step
 
 natCap = NULL
 laten = NULL 
 finalArr = NULL
 
-for (i in 1:plotPoints) {
-    natCap[i] = i*step
-    laten[i] = avgArr[i*step]
+trimmedFirst = NULL
+trimmedSecond = NULL
+trimmedThird = NULL
+
+for (i in 1:length(arrFromFirstRun)) {
+	avgVal = avgVal + arrFromFirstRun[i]
+	cycles = cycles + 1
+	if ((i %% step) == 0) { 
+		stepIndex = stepIndex + 1
+		trimmedFirst[stepIndex] = avgVal/cycles
+		avgVal = 0
+		cycles = 0
+	}
 }
 
-finalArr = cbind(natCap, laten)
+# sprintf("trimmedFirst = %f", trimmedFirst)
 
-sprintf("finalArr = %f", finalArr)
+avgVal = 0
+stepIndex = 0
+cycles = 0
+for (i in 1:length(arrFromSecondRun)) {
+	avgVal = avgVal + arrFromSecondRun[i]
+	cycles = cycles + 1
+	if ((i %% step) == 0) { 
+		stepIndex = stepIndex + 1
+		trimmedSecond[stepIndex] = avgVal/cycles
+		avgVal = 0
+		cycles = 0
+	}
+}
+
+# sprintf("trimmedSecond = %f", trimmedSecond)
+
+avgVal = 0
+stepIndex = 0
+cycles = 0
+for (i in 1:length(arrFromThirdRun)) {
+	avgVal = avgVal + arrFromThirdRun[i]
+	cycles = cycles + 1
+	if ((i %% step) == 0) { 
+		stepIndex = stepIndex + 1
+		trimmedThird[stepIndex] = avgVal/cycles
+		avgVal = 0
+		cycles = 0
+	}
+}
+
+# sprintf("trimmedThird = %f", trimmedThird)
+
+for (i in 1:plotPoints) {
+    natCap[i] = i*step
+    laten[i] = (trimmedFirst[i] + trimmedSecond[i] + trimmedThird[i]) / 3
+}
 
 png('latency.png', width = 6, height=5, units="in", res=300)
 
-# plot(avgArr, col="blue", xlab="NAT capacity", ylab="Packet delay (ms)")
-plot(finalArr[1], finalArr[2], type="o", col="blue", xlab="NAT capacity", ylab="Packet delay (ms)")
+plot(natCap, laten, type="o", col="blue", xlab="NAT capacity", ylab="Packet delay (ms)")
 
 # lines(fw2time, fw2rampct, type="o", col="red")
 # lines(fw3time, fw3rampct, type="o", col="green")
@@ -95,13 +129,3 @@ title(main="Latency")
 
 grid(col="gray")
 dev.off()
-
-
-# [1] "finalArr = 1000.000000" "finalArr = 2000.000000" "finalArr = 3000.000000"
-# [4] "finalArr = 4000.000000" "finalArr = 5000.000000" "finalArr = 6000.000000"
-# [7] "finalArr = 7000.000000" "finalArr = 8000.000000" "finalArr = 9000.000000"
-#[10] "finalArr = 2.723317"    "finalArr = 2.080749"    "finalArr = 8.658681"   
-#[13] "finalArr = 4.078346"    "finalArr = 3.482432"    "finalArr = 5.955279"   
-#[16] "finalArr = 7.726355"    "finalArr = 0.870694"    "finalArr = 4.214192" 
-
-
