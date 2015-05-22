@@ -1,10 +1,8 @@
-// Adopted from golang_firewall_v2. Changes are:
-// - change threshold from incremental counter to msgs per second
+// NAT with etcd on another VirtualBox VM but the same physical host.
 
 package main
 
 import (
-	//	"./Netfilter"
 	"fmt"
 	"net"
 	"os"
@@ -17,13 +15,12 @@ import (
 	"code.google.com/p/gopacket"
 	"code.google.com/p/gopacket/layers"
 	"code.google.com/p/gopacket/pcap"
-	// "github.com/coreos/go-etcd/etcd"
 	"github.com/openshift/geard/pkg/go-netfilter-queue"
+	"github.com/coreos/go-etcd/etcd"
 )
 
-// var ip_count map[string]int
-var nat_map map[int]net.IP
-var externalEtcd []string = []string{"http://10.0.0.11:4001"}
+var natMap map[int]net.IP // we use this for stat purposes, not the functionality
+var etcdAddress []string = []string{"http://10.0.0.11:4001"}
 
 // Prints error message (err) with caller provided string (msg).
 // Terminate the program if terminate=true (continue execution otherwise).
@@ -38,79 +35,6 @@ func handleError(msg string, err error, terminate bool) {
 	}
 }
 
-// // run for the first time and determine operational value of the threshold
-// func registerPath(path string) {
-// 	// Create client to connect to the etcd.
-// 	client := etcd.NewClient(externalEtcd)
-
-// 	aggrThresPath := "/firewall/aggr"
-// 	hostname, _ := os.Hostname()
-// 	// fmt.Println("[DEBUG] hostname =", hostname)
-// 	// assign newThresVal to the instance being created
-// 	localThresPath = "/firewall/" + hostname
-
-// 	// check if aggregate path already exists
-// 	ret, err := client.Get(aggrThresPath, false, false)
-// 	if err != nil {
-// 		// Path does not exist. This is the first instance of the Pod.
-// 		// Insert aggregate threshold value at /firewall/aggr/
-// 		ret, err = client.Set(aggrThresPath, strconv.Itoa(initThres), 0)
-// 		handleError("[ERROR] Could not Set the aggr value to the etcd", err, true)
-// 		fmt.Println("[INFO] Successfully set the aggregate threshold")
-
-// 		// assign total aggregate value to this firewall instance.
-// 		ret, err = client.Set(localThresPath, strconv.Itoa(initThres), 0)
-// 		handleError("[ERROR] Could not set local value to the etcd", err, true)
-// 		fmt.Printf("[INFO] Successfully set initThres: %d to [%s]\n", initThres, localThresPath)
-
-// 	} else {
-// 		// Aggregate path does exist. This is not the first instance of the Pod.
-// 		// Count how many Pods exist and divide /firewall/aggr value evenly.
-// 		// Update local threshold of the all instances with new value.
-
-// 		handleError("[ERROR] Could not read aggr value from etcd", err, true)
-// 		aggrThresVal, _ := strconv.Atoi(ret.Node.Value)
-// 		fmt.Println("[INFO] aggrThresVal =", aggrThresVal)
-
-// 		ret, err = client.Get("/firewall", false, true)
-// 		handleError("[ERROR] Could not read value from the etcd", err, true)
-
-// 		totalInstances := ret.Node.Nodes.Len() - 1 // -1 for /firewall/aggr
-// 		fmt.Println("[INFO] number of total instances =", totalInstances)
-
-// 		newThresVal := aggrThresVal / (totalInstances + 1) // +1 for the instance being created
-// 		fmt.Println("[INFO] newThresVal =", newThresVal)
-
-// 		for _, node := range ret.Node.Nodes {
-// 			// assign newThresVal to all instances, except /firewall/aggr
-// 			if node.Key != aggrThresPath {
-// 				ret, err = client.Set(node.Key, strconv.Itoa(newThresVal), 0)
-// 				handleError(fmt.Sprintf("[ERROR] Could not set newThresVal to %s", node.Key), err, true)
-// 				fmt.Printf("[INFO] Successfully set newThresVal: %d to [%s]\n", newThresVal, node.Key)
-// 			}
-// 		}
-// 		// assign newThresVal to the instance being created
-// 		ret, err = client.Set(localThresPath, strconv.Itoa(newThresVal), 0)
-// 		handleError(fmt.Sprintf("[ERROR] Could not set newThresVal to %s", localThresPath), err, true)
-// 		fmt.Printf("[INFO] Successfully set newThresVal: %d to [%s]\n", newThresVal, localThresPath)
-// 	}
-// }
-
-// // continously called to update operational threshold value from the etcd
-// func updateOperThres() {
-// 	client := etcd.NewClient(k8sMaster)
-
-// 	ret, err := client.Get(localThresPath, false, false)
-// 	handleError("[ERROR] Could not read value from the etcd", err, true)
-
-// 	newOperThres, _ := strconv.Atoi(ret.Node.Value)
-// 	if newOperThres != operThres {
-// 		fmt.Printf("[INFO] Updated operThres from %d to %d\n", operThres, newOperThres)
-// 		operThres = newOperThres
-// 	}
-
-// }
-
 func main() {
 	// Firewall local state variables
 	var servAddr string // service address IP:PORT of ECHOFILTEREDSERVICE; retrived on runtime
@@ -121,7 +45,8 @@ func main() {
 	var nfq *netfilter.NFQueue      // Netfilter queue
 	var err error
 
-	nat_map = make(map[int]net.IP)
+	// we will store content of this map in etcd. Right now this map structure has portNumber:IP_address mapping, e.g, 12345:10.0.0.1, 12346:10.0.0.2, 12347:10.0.0.3 and so on. They will be stored at etcd in following format: /nat/ins1/port/IP_address. Examples /nat/ins1/12345/10.0.0.1, /nat/ins1/12346/10.0.0.2, /nat/ins1/12347/10.0.0.3
+	natMap = make(map[int]net.IP)
 
 	// Find machine IP and service IP 
 	fmt.Printf("[DEBUG] Listing all devices\n")
@@ -152,11 +77,12 @@ func main() {
 	handleError("[ERROR] can not find iptables", err, true)
 	fmt.Printf("[DEBUG] iptables is located at: %s\n", ipTablesPath)
 
-	// block all connection to the 3333 port since this is where echo messages are sent
+	// block all connections, but 4001 which is used by etcd. 
 	cmd := append([]string{"-A"}, "INPUT", "-p", "tcp", "!", "--sport", "4001", "-j", "NFQUEUE", "--queue-num", "0")
 	err = exec.Command(ipTablesPath, cmd...).Run()
 	handleError("[ERROR] Could not add iptables rules", err, true)
-	fmt.Println("[DEBUG] Added iptable rule to block all connections to port 3333")
+	fmt.Println("[DEBUG] Added iptables rule to capture all INPUT but port 4001")
+
 
 	// Start netfilter to capture incoming packets
 	nfq, err = netfilter.NewNFQueue(0, 10000, netfilter.NF_DEFAULT_PACKET_SIZE)
@@ -174,31 +100,20 @@ func main() {
 	handleError("[ERROR] Could not create file to record stats", err, true)
 	defer statFile.Close()
 
-	_, err = statFile.WriteString("server_time, len(nat_map)\n")
-	handleError("[ERROR] Could not write to stats file", err, true)
+	// establish client connection to etcd server
+	ectdClient := etcd.NewClient(etcdAddress)
+	natEtcdPathRoot := "/nat/ins1/"
+	natEtcdPath := ""
 	
 	for true {
 		select {
 
-		// record nat_map capacity in file every second
-		// case <- time.NewTicker(time.Second).C:
-		// 	_, err = statFile.WriteString(strconv.FormatInt(time.Now().UnixNano(), 10) + " " + strconv.Itoa(len(nat_map)) + "\n")
-		// 	handleError("[ERROR] Could not write to statFile", err, true)
-			// fmt.Println("nat_map: ", nat_map)
-
-		
-		// case <-etcdChan:
-		// 	// update operational threshold value from the etcd
-		// 	fmt.Printf("[INFO] Updating Threshold from etcd\n")
-		// 	updateOperThres()
-
+		// process each incoming packet and record number of entries in the NAT map (len(nat_map)) when each packet was received
 		case p := <-packets:
-			_, err = statFile.WriteString(strconv.FormatInt(time.Now().UnixNano(), 10) + " " + strconv.Itoa(len(nat_map)) + "\n")
+			// file entry format (nat_time, len(nat_map))
+			_, err = statFile.WriteString(strconv.FormatInt(time.Now().UnixNano(), 10) + " " + strconv.Itoa(len(natMap)) + "\n")
 			handleError("[ERROR] Could not write to statFile", err, true)
 			
-			// retrieve NAT mapping from etcd
-			// retrieveFromEtcd()
-
 			// fmt.Println("[DEBUG] MAIN Incoming packet before processing")
 			// fmt.Println(p.Packet)
 			IPlayer := p.Packet.Layer(layers.LayerTypeIPv4)
@@ -211,21 +126,30 @@ func main() {
 			// fmt.Printf("src %s:%s, dst %s:%s, payload: %s\n", ipv4.SrcIP.String(), tcp.SrcPort, ipv4.DstIP.String(), tcp.DstPort, payload)
 
 			if ipv4.SrcIP.String()+":"+strconv.Itoa(int(tcp.SrcPort)) == servAddr {
-				/* response packet
-				 * if we have more than one srcIP, we will have to remap accordingly
-				 * also if we are sending to more than one service, servAddr will have to iterate to find a matching one
-				 */
-				clientIPAddr := nat_map[int(tcp.DstPort)]
+				// This is response packet. If we have more than one srcIP, we will have to remap accordingly also if we are sending to more than one service, servAddr will have to iterate to find a matching one
+				 
+				natEtcdPath = natEtcdPathRoot + tcp.DstPort.String()
+				ret, err := ectdClient.Get(natEtcdPath, false, false)
+				handleError("[ERROR] Could not read value from the etcd", err, true)
+
+				// clientIPAddr := nat_map[int(tcp.DstPort)]
+				clientIPAddr := net.ParseIP(ret.Node.Value)
+				fmt.Printf("[INFO] clientIPAddr from etcd %s\n", clientIPAddr.String())
+				
 				sendRedirect(int(tcp.DstPort), fd, clientIPAddr, ipv4, payload)
 				// fmt.Println("[DEBUG] Processed response from servAddr: ", servAddr)
 				// fmt.Printf("src %s:%s, dst %s:%s, payload: %s\n", ipv4.SrcIP.String(), tcp.SrcPort, ipv4.DstIP.String(), tcp.DstPort, payload)
 			} else {
-				/* keep mappings and statistics
-				 * currently we can just use tcp.SrcPort, because we do not remap since we only receive one IP address
-				 * from kube-proxy who can ensure it does not reuse SrcPorts that is already in use. If expanded to multi-IPs srcs
-				 * in the future, we'll have to have a mapping of the srcPort from kube-proxy to a new Port
-				 */
-				nat_map[int(tcp.SrcPort)] = ipv4.SrcIP
+				// keep mappings and statistics. Currently we can just use tcp.SrcPort, because we do not remap since we only receive one IP address from kube-proxy who can ensure it does not reuse SrcPorts that is already in use. If expanded to multi-IPs srcs in the future, we'll have to have a mapping of the srcPort from kube-proxy to a new Port
+
+				natMap[int(tcp.SrcPort)] = ipv4.SrcIP
+
+				// set port mapping in etcd
+				natEtcdPath = natEtcdPathRoot + tcp.SrcPort.String()
+				_, err = ectdClient.Set(natEtcdPath, ipv4.SrcIP.String(), 0)
+				handleError(fmt.Sprintf("[ERROR] Could not set natEtcdPath to %s", ipv4.SrcIP.String()), err, true)
+				fmt.Printf("[INFO] Successfully set natEtcdPath: %s\n", ipv4.SrcIP.String())
+
 				// ip_count[ipv4.SrcIP.String()] = ip_count[ipv4.SrcIP.String()] + 1
 				// fmt.Printf("[DEBUG] ip_count addr: %s, cnt: %d\n", ipv4.SrcIP.String(), ip_count[ipv4.SrcIP.String()])
 				// fmt.Printf("[DEBUG] nat_map int: %d, val: %s\n", tcp.SrcPort, nat_map[int(tcp.SrcPort)])
