@@ -1,4 +1,4 @@
-// Base version of NAT without any etcd to store the state.
+// NAT with etcd on another VirtualBox VM on the same physical host.
 
 package main
 
@@ -43,7 +43,8 @@ func main() {
 	var nfq *netfilter.NFQueue      // Netfilter queue
 	var err error
 
-	nat_map = make(map[int]net.IP)
+	// we will store content of this map in etcd. Right now this map structure has portNumber:IP_address mapping, e.g, 12345:10.0.0.1, 12346:10.0.0.2, 12347:10.0.0.3 and so on. They will be stored at etcd in following format: /nat/ins1/port/IP_address. Examples /nat/ins1/12345/10.0.0.1, /nat/ins1/12346/10.0.0.2, /nat/ins1/12347/10.0.0.3
+	// nat_map = make(map[int]net.IP)
 
 	// Find machine IP and service IP 
 	fmt.Printf("[DEBUG] Listing all devices\n")
