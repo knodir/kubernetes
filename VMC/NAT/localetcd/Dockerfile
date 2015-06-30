@@ -6,4 +6,4 @@ ADD nat /var/vmc/nat
 
 EXPOSE 3333
 
-CMD ["./var/vmc/nat"]
+CMD ["/var/vmc/nat"]

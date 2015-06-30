@@ -2,8 +2,15 @@
 Description=etcd daemon
 
 [Service]
-EnvironmentFile=/home/core/STARTUP_SCRIPTS/discovery_token.txt 
-ExecStart=/usr/bin/etcd -addr 198.162.52.126:4001 -peer-addr 198.162.52.126:7001 -discovery=$DISCOVERY_URL -data-dir=/home/core/etcd -name=naur
+Environment="ETCD_INITIAL_ADVERTISE_PEER_URLS=http://192.168.56.210:2380"
+Environment="ETCD_LISTEN_PEER_URLS=http://192.168.56.210:2380"
+Environment="ETCD_LISTEN_CLIENT_URLS=http://192.168.56.210:2379,http://127.0.0.1:2379"
+Environment="ETCD_ADVERTISE_CLIENT_URLS=http://192.168.56.210:2379"
+Environment="ETCD_INITIAL_CLUSTER_STATE=new"
+Environment="ETCD_INITIAL_CLUSTER=naur=http://192.168.56.210:2380"
+Environment="ETCD_NAME=naur"
+ExecStart=/usr/bin/etcd2
 ExecStartPost=-/bin/bash -c "until /usr/bin/etcdctl set /coreos.com/network/config '{\"Network\": \"10.100.0.0/16\"}'; do echo \"waiting for etcd to become available...\"; sleep 5; done"
 
 [Install]
+

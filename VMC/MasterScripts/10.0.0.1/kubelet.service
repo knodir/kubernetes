@@ -6,6 +6,6 @@ Wants=etcd_custom.service
 Wants=docker_custom.service
 
 [Service]
-ExecStart=/opt/bin/kubelet --address=198.162.52.126 --port=10250 --hostname_override=198.162.52.126 --etcd_servers=http://198.162.52.126:4001 --allow_privileged=true --logtostderr=true --api_servers=198.162.52.126:8080
+ExecStart=/opt/bin/kubelet --address=192.168.56.210 --port=10250 --hostname_override=192.168.56.210 --etcd_servers=http://192.168.56.210:2379 --allow_privileged=true --logtostderr=true --api_servers=192.168.56.210:8080
 
 [Install]

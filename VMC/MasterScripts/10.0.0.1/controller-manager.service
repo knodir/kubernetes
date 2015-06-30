@@ -8,6 +8,6 @@ Wants=docker_custom.service
 Wants=apiserver.service
 
 [Service]
-ExecStart=/opt/bin/kube-controller-manager --master=http://198.162.52.126:8080 --machines=198.162.52.126
+ExecStart=/opt/bin/kube-controller-manager --master=http://192.168.56.210:8080 --machines=192.168.56.210
 
 [Install]
