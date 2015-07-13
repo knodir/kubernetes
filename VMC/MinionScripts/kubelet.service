@@ -1,0 +1,9 @@
+[Unit]
+Description=Kubernetes Kubelet
+After=docker_custom.service
+Wants=docker_custom.service
+
+[Service]
+ExecStart=/opt/bin/kubelet --address=1998.162.52.37 --port=10250 --hostname_override=198.162.52.37 --etcd_servers=http://198.162.52.217:4001 --logtostderr=true
+
+[Install]

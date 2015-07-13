@@ -1,0 +1,12 @@
+[Unit]
+Description=API Server
+After=etcd_custom.service
+After=docker_custom.service
+Wants=etcd_custom.service
+Wants=docker_custom.service
+
+[Service]
+ExecStart=/opt/bin/kube-apiserver --address=198.162.52.126 --port=8080 --etcd_servers=http://198.162.52.126:4001 --portal_net=10.100.0.0/16 --allow_privileged=true --logtostderr=true
+
+[Install]
+

@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# Start flannel
+sudo systemctl start flannel.service
+
+# Start docker
+sudo systemctl start docker_custom.service
+
+# Start kube-proxy
+sudo systemctl start proxy.service
+
+# Start kubelet
+sudo systemctl start kubelet.service 
