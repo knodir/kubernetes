@@ -1,11 +1,11 @@
 package main
 
 import (
+  "bufio"
   "fmt"
   "os"
-  "bufio"
-  "strings"
   "strconv"
+  "strings"
 )
 
 func prepareData(expName string) {
@@ -59,7 +59,7 @@ func prepareData(expName string) {
   }
   // fmt.Println(serverData)
   fmt.Println("len =", len(serverData))
-  _, err = plotFile.WriteString(fmt.Sprintf("%s %s\n", 
+  _, err = plotFile.WriteString(fmt.Sprintf("%s %s\n",
     "natCapacity", "msgLatency"))
 
   msInNs := uint64(1000000)
@@ -76,15 +76,15 @@ func prepareData(expName string) {
       fmt.Printf("err :: %v\n", err)
     }
 
-    aggrLatency += uint64(serverData[clientTime]/msInNs)
-    if jumpIndex % jumpStep == 0 {
+    aggrLatency += uint64(serverData[clientTime] / msInNs)
+    if jumpIndex%jumpStep == 0 {
       aggrLatency = uint64(aggrLatency / jumpStep)
       fmt.Printf("%d: %d\n", natCap, aggrLatency)
-      _, err = plotFile.WriteString(fmt.Sprintf("%d %d\n", 
+      _, err = plotFile.WriteString(fmt.Sprintf("%d %d\n",
         natCap, aggrLatency))
       aggrLatency = 0
       jumpIndex = 0
-    } 
+    }
     jumpIndex++
   }
 }
@@ -93,4 +93,5 @@ func main() {
   prepareData("coloc")
   prepareData("native")
   prepareData("local")
+  prepareData("lan")
 }
