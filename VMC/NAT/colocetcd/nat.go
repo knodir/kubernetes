@@ -3,9 +3,9 @@
 package main
 
 import (
+  "bytes"
   "fmt"
   "net"
-  "bytes"
   "os"
   "os/exec"
   "strconv"
@@ -16,9 +16,9 @@ import (
   "code.google.com/p/gopacket"
   "code.google.com/p/gopacket/layers"
   "code.google.com/p/gopacket/pcap"
-  "github.com/openshift/geard/pkg/go-netfilter-queue"
   "github.com/coreos/go-etcd/etcd"
   "github.com/golang/glog"
+  "github.com/openshift/geard/pkg/go-netfilter-queue"
 )
 
 var natMap map[int]net.IP // we use this for stat purposes, not the functionality
@@ -39,22 +39,22 @@ func handleError(msg string, err error, terminate bool) {
 
 func main() {
   // Firewall local state variables
-  var servAddr string // service address IP:PORT of ECHOFILTEREDSERVICE; retrived on runtime
-  var  machineAddr string         // address of container
-  var ipTablesPath string         // path to iptables
-  var ifs []pcap.Interface        // List of interfaces
-  var env_var []string            // List of environment variables
-  var nfq *netfilter.NFQueue      // Netfilter queue
+  var servAddr string        // service address IP:PORT of ECHOFILTEREDSERVICE; retrived on runtime
+  var machineAddr string     // address of container
+  var ipTablesPath string    // path to iptables
+  var ifs []pcap.Interface   // List of interfaces
+  var env_var []string       // List of environment variables
+  var nfq *netfilter.NFQueue // Netfilter queue
   var err error
 
-  // we will store content of this map in etcd. Right now this map structure has 
-  // portNumber:IP_address mapping, e.g, 12345:10.0.0.1, 12346:10.0.0.2, 
-  // 12347:10.0.0.3 and so on. They will be stored at etcd in the following 
-  // format: /nat/ins1/port/IP_address. Examples /nat/ins1/12345/10.0.0.1, 
+  // we will store content of this map in etcd. Right now this map structure has
+  // portNumber:IP_address mapping, e.g, 12345:10.0.0.1, 12346:10.0.0.2,
+  // 12347:10.0.0.3 and so on. They will be stored at etcd in the following
+  // format: /nat/ins1/port/IP_address. Examples /nat/ins1/12345/10.0.0.1,
   // /nat/ins1/12346/10.0.0.2, /nat/ins1/12347/10.0.0.3
   natMap = make(map[int]net.IP)
 
-  // Find machine IP and service IP 
+  // Find machine IP and service IP
   fmt.Printf("[DEBUG] Listing all devices\n")
   ifs, err = pcap.FindAllDevs()
   if err != nil {
@@ -82,7 +82,7 @@ func main() {
   // servAddr = "198.162.52.126" // os.Args[1]
   fmt.Printf("server address is :: %s\n", servAddr)
 
-  // Install IPTABLE rule to bypass kernel network stack 
+  // Install IPTABLE rule to bypass kernel network stack
   ipTablesPath, err = exec.LookPath("iptables")
   if err != nil {
     glog.Fatalf("could not find iptables :: %v", err)
@@ -90,14 +90,14 @@ func main() {
     fmt.Printf("successfully found iptables at :: %s\n", ipTablesPath)
   }
 
-  // block all connections, but 2379 which is used by etcd. 
-  cmd := append([]string{"-A"}, "INPUT", "-p", "tcp", "!", "--sport", "2379", 
+  // block all connections, but 2379 which is used by etcd.
+  cmd := append([]string{"-A"}, "INPUT", "-p", "tcp", "!", "--sport", "2379",
     "-j", "NFQUEUE", "--queue-num", "0")
   err = exec.Command(ipTablesPath, cmd...).Run()
   if err != nil {
     glog.Fatalf("could not add iptables rules :: %v", err)
   } else {
-    fmt.Printf("%s %s\n", "successfully added iptables rule to capture", 
+    fmt.Printf("%s %s\n", "successfully added iptables rule to capture",
       "all INPUT except port 2379 for etcd")
   }
 
@@ -110,10 +110,10 @@ func main() {
   }
   defer nfq.Close()
 
-  /* Create syscall raw socket for writing packets out*/
+  //  Create syscall raw socket for writing packets out
   fd, _ := syscall.Socket(syscall.AF_INET, syscall.SOCK_RAW, syscall.IPPROTO_RAW)
 
-  // Listen for packets 
+  // Listen for packets
   packets := nfq.GetPackets()
 
   // open file to keep statistics
@@ -129,10 +129,10 @@ func main() {
   ectdClient := etcd.NewClient(etcdAddress)
   natEtcdPathRoot := "/nat/ins1/"
   natEtcdPath := ""
-  
+
   for true {
     select {
-    // process each incoming packet and record number of entries in the NAT map 
+    // process each incoming packet and record number of entries in the NAT map
     // (len(nat_map)) when each packet was received
     case p := <-packets:
       // fmt.Println("[DEBUG] MAIN Incoming packet before processing")
@@ -152,22 +152,22 @@ func main() {
       // if err != nil {
       //   fmt.Println("failed to convert the payload to timestamp")
       // } else {
-      //   fmt.Printf("successfully converted the payload to timestamp: %v\n", 
+      //   fmt.Printf("successfully converted the payload to timestamp: %v\n",
       //     timestamp)
       // }
 
       TCPlayer := p.Packet.Layer(layers.LayerTypeTCP)
       tcp, _ := TCPlayer.(*layers.TCP)
 
-      fmt.Printf("src %s:%s, dst %s:%s, payload: %v\n", ipv4.SrcIP.String(), 
+      fmt.Printf("src %s:%s, dst %s:%s, payload: %v\n", ipv4.SrcIP.String(),
         tcp.SrcPort, ipv4.DstIP.String(), tcp.DstPort, payload)
 
       if fmt.Sprintf("%s:%d", ipv4.SrcIP.String(), int(tcp.SrcPort)) == servAddr {
-        // This is response packet. If we have more than one srcIP, we will 
-        // have to remap each source port to IP. Also ,if we are sending to 
+        // This is response packet. If we have more than one srcIP, we will
+        // have to remap each source port to IP. Also ,if we are sending to
         // more than one service, servAddr will have to iterate to find
         // the matching one
-         
+
         natEtcdPath = natEtcdPathRoot + tcp.DstPort.String()
         ret, err := ectdClient.Get(natEtcdPath, false, false)
         if err != nil {
@@ -179,31 +179,31 @@ func main() {
         // clientIPAddr := nat_map[int(tcp.DstPort)]
         clientIPAddr := net.ParseIP(ret.Node.Value)
         fmt.Printf("clientIPAddr from etcd %s\n", clientIPAddr.String())
-        
+
         sendRedirect(int(tcp.DstPort), fd, clientIPAddr, ipv4, payload)
         // fmt.Println("[DEBUG] Processed response from servAddr: ", servAddr)
-        // fmt.Printf("src %s:%s, dst %s:%s, payload: %s\n", ipv4.SrcIP.String(), 
+        // fmt.Printf("src %s:%s, dst %s:%s, payload: %s\n", ipv4.SrcIP.String(),
         // tcp.SrcPort, ipv4.DstIP.String(), tcp.DstPort, payload)
       } else {
         // packet from the client
         // this is ugly hack to get timestamp from the payload. There should be
-        // better way of getting application layer payload via 
+        // better way of getting application layer payload via
         // appLayer := p.Packet.ApplicationLayer()
         // appPayload := appLayer.Payload()
-        // but somehow this proper way did not work for me. 
+        // but somehow this proper way did not work for me.
         // TODO(knodir) do it in a proper way
         timestampPrefix := []byte{1, 0, 0, 0, 14, 205}
         if bytes.Compare(payload[len(payload)-15:len(payload)-9], timestampPrefix) == 0 {
-          // fmt.Printf("\n\ntimestamp equal :: %v\n\n", 
+          // fmt.Printf("\n\ntimestamp equal :: %v\n\n",
           //   payload[len(payload)-15:])
           var timestamp time.Time
           err = (&timestamp).UnmarshalBinary(payload[len(payload)-15:])
           if err != nil {
             fmt.Printf("could not UnmarshalBinary :: %v\n", err)
           } else {
-           // fmt.Printf("timestamp :: %v\n", timestamp.UnixNano())
-           // file write content: (src_packet_time, nat_time, len(nat_map))
-            _, err = statFile.WriteString(fmt.Sprintf("%d %d %d\n", 
+            // fmt.Printf("timestamp :: %v\n", timestamp.UnixNano())
+            // file write content: (src_packet_time, nat_time, len(nat_map))
+            _, err = statFile.WriteString(fmt.Sprintf("%d %d %d\n",
               timestamp.UnixNano(), time.Now().UnixNano(), len(natMap)))
             if err != nil {
               glog.Fatalf("could not write to statFile :: %v", err)
@@ -212,10 +212,10 @@ func main() {
         } else {
           // fmt.Printf("timestamp not equal:: %v", payload[len(payload)-15:])
         }
-        // keep mappings and statistics. Currently we can just use tcp.SrcPort, 
-        // because we do not remap since we only receive one IP address from 
-        // kube-proxy who can ensure no SrcPorts are reused if it is already in use. 
-        // If expanded to multi-IPs srcs in the future, we'll have to have 
+        // keep mappings and statistics. Currently we can just use tcp.SrcPort,
+        // because we do not remap since we only receive one IP address from
+        // kube-proxy who can ensure no SrcPorts are reused if it is already in use.
+        // If expanded to multi-IPs srcs in the future, we'll have to have
         // a mapping of the srcPort from kube-proxy to a new Port
 
         natMap[int(tcp.SrcPort)] = ipv4.SrcIP
@@ -224,24 +224,24 @@ func main() {
         natEtcdPath = fmt.Sprintf("%s%s", natEtcdPathRoot, tcp.SrcPort.String())
         _, err = ectdClient.Set(natEtcdPath, ipv4.SrcIP.String(), 0)
         if err != nil {
-          glog.Fatalf("[ERROR] could not set natEtcdPath %s to %s :: %v", 
-          natEtcdPath, ipv4.SrcIP.String(), err)
+          glog.Fatalf("[ERROR] could not set natEtcdPath %s to %s :: %v",
+            natEtcdPath, ipv4.SrcIP.String(), err)
         } else {
-          fmt.Printf("successfully set natEtcdPath :: %s = %s\n", 
+          fmt.Printf("successfully set natEtcdPath :: %s = %s\n",
             natEtcdPath, ipv4.SrcIP.String())
         }
 
         // ip_count[ipv4.SrcIP.String()] = ip_count[ipv4.SrcIP.String()] + 1
-        // fmt.Printf("[DEBUG] ip_count addr: %s, cnt: %d\n", 
+        // fmt.Printf("[DEBUG] ip_count addr: %s, cnt: %d\n",
         // ipv4.SrcIP.String(), ip_count[ipv4.SrcIP.String()])
-        // fmt.Printf("[DEBUG] nat_map int: %d, val: %s\n", 
+        // fmt.Printf("[DEBUG] nat_map int: %d, val: %s\n",
         // tcp.SrcPort, nat_map[int(tcp.SrcPort)])
 
-        // Redirect this packet to servAddr 
+        // Redirect this packet to servAddr
         ipServ, port := getIPandPort(servAddr)
         sendRedirect(port, fd, ipServ, ipv4, payload)
         // fmt.Println("[DEBUG] Processed Incoming Packet")
-        // fmt.Printf("src %s:%s, dst %s:%s, payload: %s\n", ipv4.SrcIP.String(), 
+        // fmt.Printf("src %s:%s, dst %s:%s, payload: %s\n", ipv4.SrcIP.String(),
         // tcp.SrcPort, ipv4.DstIP.String(), tcp.DstPort, payload)
       }
       p.SetVerdict(netfilter.NF_DROP)
@@ -249,7 +249,7 @@ func main() {
   }
 }
 
-func sendRedirect(port, fd int, addr net.IP, ipv4 *layers.IPv4, 
+func sendRedirect(port, fd int, addr net.IP, ipv4 *layers.IPv4,
   payload []byte) error {
   newIPv4 := &layers.IPv4{
     Version:    ipv4.Version,
@@ -276,7 +276,7 @@ func sendRedirect(port, fd int, addr net.IP, ipv4 *layers.IPv4,
   gopacket.SerializeLayers(outbuf, opts, newIPv4, gopacket.Payload(payload))
   packetData := outbuf.Bytes()
 
-  //newPacket := gopacket.NewPacket(packetData, layers.LayerTypeIPv4, 
+  //newPacket := gopacket.NewPacket(packetData, layers.LayerTypeIPv4,
   // gopacket.Default)
   //fmt.Println(newPacket)
 

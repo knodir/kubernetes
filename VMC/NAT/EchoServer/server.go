@@ -66,8 +66,8 @@ func main() {
 func handleRequest(conn net.Conn, fd *os.File) {
   // Make a buffer to hold incoming data
   var buf [1600]byte
-      
-  for true {  
+
+  for true {
     // Read the incoming connection into the buffer
     reqLen, err := conn.Read(buf[0:])
     if err != nil {
@@ -78,7 +78,7 @@ func handleRequest(conn net.Conn, fd *os.File) {
     if err == nil {
       end_time := time.Now()
       // writing order (client_time, server_time, latency)
-      _, err = fd.WriteString(fmt.Sprintf("%d %d %d\n", timestamp.UnixNano()
+      _, err = fd.WriteString(fmt.Sprintf("%d %d %d\n", timestamp.UnixNano(),
         end_time.UnixNano(), end_time.Sub(timestamp)))
       handleError("[ERROR] Could not write stats to file", err, true)
     }

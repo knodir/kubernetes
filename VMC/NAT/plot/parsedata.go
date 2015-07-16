@@ -12,7 +12,7 @@ func prepareData(expName string) {
   natFilename := fmt.Sprintf("%s/%s", expName, "NATMapCap.txt")
   serverFilename := fmt.Sprintf("%s/%s", expName, "latency.txt")
   plotDatafile := fmt.Sprintf("%s/%s", expName, "plotdata.txt")
-  var jumpStep uint64 = 40
+  var jumpStep uint64 = 1
   var aggrLatency, jumpIndex uint64
 
   natFile, err := os.Open(natFilename)

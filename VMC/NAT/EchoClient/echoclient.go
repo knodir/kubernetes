@@ -3,17 +3,17 @@
 package main
 
 import (
-    "fmt"
-    "net"
-    "os"
-    "time"
-    "flag"
-    "strconv"
+  "flag"
+  "fmt"
+  "net"
+  "os"
+  "strconv"
+  "time"
 )
 
 func usage() {
   usageStr := fmt.Sprintf("%s \n\t%s \n\t%s \n\t%s \n%s \n%s \n%s%s\n",
-    "This program requires 3 arguments:", 
+    "This program requires 3 arguments:",
     "--dst: destination server ip:port",
     "--total: total number of messages to send",
     "--threads: number of threads to create separate connection",
@@ -23,7 +23,6 @@ func usage() {
     "different port number. This models TCP connection from different clients.")
   fmt.Printf(usageStr)
 }
-
 
 // Prints error message (err) with caller provided string (msg).
 // Terminate the program if terminate=true (continue execution otherwise).
@@ -42,7 +41,7 @@ func sendMsg(thrdName, dstServer string, totalPerThread int) {
   var conn *net.TCPConn
   tcpAddr, err := net.ResolveTCPAddr("tcp", dstServer)
   handleError("[ERROR] Could not Resolve TCP address", err, true)
-  
+
   // send each packet in different thread
   for i := 0; i < totalPerThread; i++ {
     conn, err = net.DialTCP("tcp", nil, tcpAddr)
@@ -61,7 +60,7 @@ func sendMsg(thrdName, dstServer string, totalPerThread int) {
 
     fmt.Printf("[INFO] %s sent %d packets\n", thrdName, i)
     time.Sleep(time.Millisecond)
-  }   
+  }
 }
 
 func main() {
@@ -76,7 +75,7 @@ func main() {
   dstServer := flag.String("dst", "0.0.0.0:0", "destination server ip:port")
   total := flag.Int("total", 100, "total number of messages to send")
   threadNum := flag.Int("threads", 1, "number of threads to create separate connection")
-  
+
   flag.Parse()
 
   if *total < 1 {
@@ -84,10 +83,10 @@ func main() {
     os.Exit(1)
   }
 
-  fmt.Printf("[INFO] running client to send total %d messages to %s server with %d threads\n", 
+  fmt.Printf("[INFO] running client to send total %d messages to %s server with %d threads\n",
     *total, *dstServer, *threadNum)
 
-  totalPerThread = int(*total/(*threadNum))
+  totalPerThread = int(*total / (*threadNum))
 
   for index := 0; index < *threadNum; index++ {
     thrdName = "thread-" + strconv.Itoa(index)

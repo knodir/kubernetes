@@ -2,7 +2,7 @@
   "id": "echomasterservice",
   "kind": "Service",
   "apiVersion": "v1beta1",
-  "publicIPs": ["198.162.52.126"],
+  "publicIPs": ["198.162.56.210"],
   "port": 3333,
   "containerPort": 3333,
   "selector": {
