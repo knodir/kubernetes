@@ -1,0 +1,102 @@
+This file describes steps to quickly reproduce ExMB environment used to HotNets
+submission. 
+
+Below are useful commands for operation.
+
+
+Install CoreOS on the server via Ubuntu Live install. Run following command
+after running terminal on Live CD:
+
+$ sudo ./coreos_install.sh -d /dev/sda -C stable -c cloud-config.yaml
+
+Setup CoreOS static networking
+https://coreos.com/docs/cluster-management/setup/network-config-with-networkd/
+
+Docker image creation
+
+Build docker image from Dockerfile in the local folder (.)
+$ sudo docker build -t knodir/nat .
+
+Boot new Docker and get to its shell
+$ sudo docker run -t -i knodir/nat /bin/bash
+
+Push new Docker image after changes
+$ sudo docker commit -m "modified NAT" -a "Nodir Kodirov" 0b2616b0e5a8
+knodir/nat 
+$ sudo docker push knodir/nat
+
+You can get ID of the Docker by running 
+$ sudo docker ps 
+
+Get the list of Docker images with their latest build time.
+$ sudo docker images
+
+Remove Docker image 
+$ sudo docker rmi <image_id>
+
+Mount the current folder inside docker container and run the firewall in 
+interactive mode 
+$ sudo docker run --privileged -v /home/core/kubernetes/VMC/NAT:/run/:rw -t -i
+knodir/nat /bin/bash
+
+$ sudo docker run --privileged -v /home/core/devel/kubernetes/VMC/NAT:/run/:rw
+-t -i golang:1.4 /bin/bash
+
+To run Kubernetes on your machine you can follow instructions here
+https://www.digitalocean.com/community/tutorials/how-to-install-and-configure-kubernetes-on-top-of-a-coreos-cluster
+
+or take a shortcut by directly copying ready (old) binaries
+Steps:
+- copy peterbinaries to /opt/bin
+- $ sudo systemctl enable *
+
+
+Create Kubernetes services:
+$ kubectl create -f echo-filtered-service.json --server=192.168.56.210:8080
+$ kubectl create -f echo-server-controller.json --server=192.168.56.210:8080
+$ kubectl create -f echo-server-service.json --server=192.168.56.210:8080
+$ kubectl create -f nat-controller.json --server=192.168.56.210:8080
+
+Get list of running pods, services and replication controllers:
+$ kubectl get pods --server=192.168.56.210:8080
+$ kubectl get services --server=192.168.56.210:8080
+$ kubectl get rc --server=192.168.56.210:8080
+
+Stop Kubernetes services:
+$ kubectl stop pods --server=192.168.56.210:8080
+$ kubectl stop services --server=192.168.56.210:8080
+$ kubectl stop rc --server=192.168.56.210:8080
+
+Continuously output pod's log message
+$ kubectl log -f firewallcontroller-nv42v --server=192.168.56.210:8080
+
+Get into pod's running shell
+$ kubectl exec -p firewallcontroller-nv42v --server=192.168.56.210:8080 -it --
+bash -il
+
+Resize k8s replication controller
+$ kubectl resize --replicas=1 rc firewallcontroller --server=192.168.56.210:8080
+
+Send messages with echo client
+./echoclient --dst=198.162.52.126:3333 --total=10
+OR
+$ echo "hello" | nc 198.162.52.217 3333
+
+Copy stress tool binary from remote host to pod container (while inside a pod)
+$ scp knodir@lamport.cs.ubc.ca:/home/knodir/devel/kubernetes/NODIRSTUFF/monitoring/stress stresstool
+
+Run stress tool
+$ stress --io 2 --vm 1
+
+Mount VMs filesystem to the local folder for code developlment
+$ sshfs core@192.168.56.210:/home/core/devel/kubernetes/VMC ~/remmount
+
+Copy files from Pod to remote machine 
+$ scp file_name.txt knodir@lamport.cs.ubc.ca:/home/knodir/devel/temp/experiment_data/
+
+
+Kubernetes resource monitoring
+
+Currently, Kubernetes supports only CPU and RAM based resource limitation.
+"memory" is in bytes and "cpu" is in milli-cores. Current support is in a
+container level, not Pod level. Source.
